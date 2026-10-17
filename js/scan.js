@@ -60,26 +60,35 @@
     return g;
   }
 
-  // Separable box blur of radius r.
+  // Separable box blur of radius r. Both passes walk the picture row by
+  // row, as it lies in memory; each column's running sum is the same as
+  // when it was walked down the column.
   function blur(g, w, h, r) {
     if (r < 1) return g;
     const tmp = new Float32Array(w * h);
     const out = new Float32Array(w * h);
     const span = 2 * r + 1;
     for (let y = 0; y < h; y++) {
+      const o = y * w;
       let acc = 0;
-      for (let x = -r; x <= r; x++) acc += g[y * w + Math.min(w - 1, Math.max(0, x))];
+      for (let x = -r; x <= r; x++) acc += g[o + Math.min(w - 1, Math.max(0, x))];
       for (let x = 0; x < w; x++) {
-        tmp[y * w + x] = acc / span;
-        acc += g[y * w + Math.min(w - 1, x + r + 1)] - g[y * w + Math.max(0, x - r)];
+        tmp[o + x] = acc / span;
+        acc += g[o + (x + r + 1 < w ? x + r + 1 : w - 1)] - g[o + (x - r > 0 ? x - r : 0)];
       }
     }
-    for (let x = 0; x < w; x++) {
-      let acc = 0;
-      for (let y = -r; y <= r; y++) acc += tmp[Math.min(h - 1, Math.max(0, y)) * w + x];
-      for (let y = 0; y < h; y++) {
-        out[y * w + x] = acc / span;
-        acc += tmp[Math.min(h - 1, y + r + 1) * w + x] - tmp[Math.max(0, y - r) * w + x];
+    const acc = new Float64Array(w);
+    for (let y = -r; y <= r; y++) {
+      const o = Math.min(h - 1, Math.max(0, y)) * w;
+      for (let x = 0; x < w; x++) acc[x] += tmp[o + x];
+    }
+    for (let y = 0; y < h; y++) {
+      const o = y * w;
+      const add = Math.min(h - 1, y + r + 1) * w;
+      const sub = Math.max(0, y - r) * w;
+      for (let x = 0; x < w; x++) {
+        out[o + x] = acc[x] / span;
+        acc[x] += tmp[add + x] - tmp[sub + x];
       }
     }
     return out;
@@ -143,6 +152,12 @@
     if (w <= 0 || h <= 0) return [];
     const mask = new Uint8Array(w * h);
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (test(x0 + x, y0 + y)) mask[y * w + x] = 1;
+    return maskBlobs(mask, w, h, x0, y0);
+  }
+
+  // Connected groups of the 1s in a w by h mask whose corner is at (x0, y0).
+  // The mask is used up.
+  function maskBlobs(mask, w, h, x0, y0) {
     const out = [];
     const stack = [];
     for (let i = 0; i < w * h; i++) {
@@ -181,7 +196,13 @@
   // Matches the board's fixed frame (walls, office, courtyard, cell numbers)
   // at every scale and position, coarse to fine. Returns { s, tx, ty, score }:
   // an image point is s * (reference point) + (tx, ty).
-  function locateBoard(img, gray, ref) {
+  // Where the board was found last, for each reference and picture size: a
+  // shared game window keeps it in one place, so the next picture is looked
+  // at there first, and the whole search runs only when it isn't there.
+  const placed = new WeakMap(); // ref.board -> Map('WxH' -> { s, tx, ty })
+
+  // sharp: gray blurred by 1, when the caller has it already.
+  function locateBoard(img, gray, ref, sharp) {
     const W = img.width;
     const H = img.height;
     const pts = ref.board.points;
@@ -209,12 +230,7 @@
     }
     const bw = maxX - minX;
     const bh = maxY - minY;
-    const levels = [{ g: blur(gray, W, H, 1), w: W, h: H, f: 1 }];
-    while (levels[levels.length - 1].w > 120 && levels[levels.length - 1].h > 60) {
-      const l = levels[levels.length - 1];
-      const d = half(l.g, l.w, l.h);
-      levels.push({ g: d.g, w: d.w, h: d.h, f: l.f * 2 });
-    }
+    const levels = [{ g: sharp || blur(gray, W, H, 1), w: W, h: H, f: 1 }];
     const score = (lv, s, ox, oy, nearest) => {
       let sx = 0;
       let sxx = 0;
@@ -236,6 +252,66 @@
       const varx = sxx - (sx * sx) / n;
       return varx > 1e-6 ? sxt / Math.sqrt(varx) : -1;
     };
+    // Fine: a search over scale and position together around c. edge: the
+    // best was on the search's edge, so a better one may lie outside it.
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    const grid = (c, lv, ds, steps, dt, reach) => {
+      let best = c;
+      let edge = false;
+      for (let i = -steps; i <= steps; i++) {
+        const s = c.s * (1 + i * ds);
+        // Scale about the board's middle, so the board stays in place.
+        const bx = c.tx - (s - c.s) * cx;
+        const by = c.ty - (s - c.s) * cy;
+        for (let dy = -reach; dy <= reach; dy++) {
+          for (let dx = -reach; dx <= reach; dx++) {
+            const tx = bx + dx * dt;
+            const ty = by + dy * dt;
+            const sc = score(lv, s, tx / lv.f, ty / lv.f, lv.f > 1);
+            if (sc > best.score) {
+              best = { s, tx, ty, score: sc };
+              edge = Math.abs(i) === steps || Math.abs(dx) === reach || Math.abs(dy) === reach;
+            }
+          }
+        }
+      }
+      best.edge = edge;
+      return best;
+    };
+    while (levels[levels.length - 1].w > 120 && levels[levels.length - 1].h > 60) {
+      const l = levels[levels.length - 1];
+      const d = half(l.g, l.w, l.h);
+      levels.push({ g: d.g, w: d.w, h: d.h, f: l.f * 2 });
+    }
+    // The fine search around a candidate: on a middle level, then at full
+    // size.
+    const refine = (c) => {
+      let L = 0;
+      while (L + 1 < levels.length && c.s / levels[L + 1].f >= 0.5) L += 1;
+      let cur = grid({ s: c.s, tx: c.tx, ty: c.ty, score: -2 }, levels[L], 0.01, 4, Math.max(1, c.f / 2), 3);
+      return grid(Object.assign({}, cur, { score: -2 }), levels[0], 0.0025, 3, 0.5, 3);
+    };
+    // Where the board was last time. A board doesn't move within a window
+    // of the same size, so a picture that doesn't match there (a popup, or
+    // the darkened board of a meal pick) is taken as it reads there, and
+    // the whole search runs only after 3 such pictures in a row, in case the
+    // game's UI scale changed.
+    const seen = placed.get(ref.board) || new Map();
+    placed.set(ref.board, seen);
+    const size = `${W}x${H}`;
+    const was = seen.get(size);
+    if (was) {
+      const again = refine(was);
+      if (again.score >= 0.8) {
+        seen.set(size, { s: was.s, tx: was.tx, ty: was.ty, f: was.f, misses: 0 });
+        return again;
+      }
+      if ((was.misses || 0) < 2) {
+        was.misses = (was.misses || 0) + 1;
+        return again;
+      }
+    }
     // Coarse: every scale the board could appear at, on a small level, with
     // a quarter of the points. The board spans most of a screenshot's width
     // when cropped to it, and about half in a full-screen one.
@@ -255,6 +331,13 @@
     cnorm = Math.sqrt(cnorm);
     for (let j = 0; j < cn; j++) ctv[j] /= cnorm;
     coarse.pts = keepIdx.map((i) => pts[i]);
+    const cxs = new Float64Array(cn);
+    const cys = new Float64Array(cn);
+    keepIdx.forEach((i, j) => {
+      cxs[j] = pts[i][0];
+      cys[j] = pts[i][1];
+    });
+    const offs = new Int32Array(cn);
     const coarseScore = (lv, s, ox, oy) => {
       let sx = 0;
       let sxx = 0;
@@ -298,10 +381,38 @@
       const oy0 = Math.ceil(-minY * k - 0.08 * bh * k);
       const oy1 = Math.floor(lv.h - 1 - maxY * k + 0.08 * bh * k);
       if (ox1 < ox0 || oy1 < oy0) continue;
+      // Inside the picture, every point falls a fixed step from the
+      // corner (the points' coordinates are all positive, so truncating
+      // ox + x * k is ox plus truncating x * k): no clamping needed there.
+      let xMax = 0;
+      let yMax = 0;
+      for (let j = 0; j < cn; j++) {
+        const xo = (cxs[j] * k) | 0;
+        const yo = (cys[j] * k) | 0;
+        if (xo > xMax) xMax = xo;
+        if (yo > yMax) yMax = yo;
+        offs[j] = yo * lv.w + xo;
+      }
+      const g = lv.g;
       let best = null;
       for (let oy = oy0; oy <= oy1; oy++) {
+        const rowInside = oy >= 0 && oy + yMax <= lv.h - 1;
         for (let ox = ox0; ox <= ox1; ox++) {
-          const sc = coarseScore(lv, s, ox, oy);
+          let sc;
+          if (rowInside && ox >= 0 && ox + xMax <= lv.w - 1) {
+            const base = oy * lv.w + ox;
+            let sx = 0;
+            let sxx = 0;
+            let sxt = 0;
+            for (let j = 0; j < cn; j++) {
+              const v = g[base + offs[j]];
+              sx += v;
+              sxx += v * v;
+              sxt += v * ctv[j];
+            }
+            const varx = sxx - (sx * sx) / cn;
+            sc = varx > 1e-6 ? sxt / Math.sqrt(varx) : -1;
+          } else sc = coarseScore(lv, s, ox, oy);
           if (!best || sc > best.score) best = { ox, oy, score: sc };
         }
       }
@@ -309,38 +420,18 @@
     }
     if (!top.length) return null;
     top.sort((a, b) => b.score - a.score);
-    // Fine: search around the best few, first on a middle level, then at
-    // full size, over scale and position together.
-    const cx = (minX + maxX) / 2;
-    const cy = (minY + maxY) / 2;
-    const grid = (c, lv, ds, steps, dt, reach) => {
-      let best = c;
-      for (let i = -steps; i <= steps; i++) {
-        const s = c.s * (1 + i * ds);
-        // Scale about the board's middle, so the board stays in place.
-        const bx = c.tx - (s - c.s) * cx;
-        const by = c.ty - (s - c.s) * cy;
-        for (let dy = -reach; dy <= reach; dy++) {
-          for (let dx = -reach; dx <= reach; dx++) {
-            const tx = bx + dx * dt;
-            const ty = by + dy * dt;
-            const sc = score(lv, s, tx / lv.f, ty / lv.f, lv.f > 1);
-            if (sc > best.score) best = { s, tx, ty, score: sc };
-          }
-        }
-      }
-      return best;
-    };
     let best = null;
+    let from = null;
     for (const c of top.slice(0, 5)) {
-      let L = 0;
-      while (L + 1 < levels.length && c.s / levels[L + 1].f >= 0.5) L += 1;
-      const mid = levels[L];
-      let cur = { s: c.s, tx: c.tx, ty: c.ty, score: -2 };
-      cur = grid(cur, mid, 0.01, 4, Math.max(1, c.f / 2), 3);
-      cur = grid(Object.assign({}, cur, { score: -2 }), levels[0], 0.0025, 3, 0.5, 3);
-      if (!best || cur.score > best.score) best = cur;
+      const cur = refine(c);
+      if (!best || cur.score > best.score) {
+        best = cur;
+        from = c;
+      }
     }
+    // The coarse candidate is kept, so the next picture is refined from
+    // the same start and lands where a whole search would.
+    if (best.score >= 0.8) seen.set(size, { s: from.s, tx: from.tx, ty: from.ty, f: from.f, misses: 0 });
     return best;
   }
 
@@ -594,6 +685,7 @@
 
   // Light, unsaturated glyphs in a box, grouped into lines, words and the
   // separate pieces of a line (like one card's text).
+  const lumCache = { img: null, key: '', lum: null };
   function textLines(img, x0, y0, x1, y1, opts) {
     const o = Object.assign({ minH: 6, maxH: 60, s: 0.34 }, opts || {});
     // Text is any unsaturated pixel clearly brighter than its surroundings:
@@ -605,19 +697,39 @@
     const w = x1 - x0 + 1;
     const h = y1 - y0 + 1;
     if (w < 4 || h < 4) return [];
-    const lum = new Float32Array(w * h);
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-      const [r, g, b] = rgbAt(img, x0 + x, y0 + y);
-      lum[y * w + x] = 0.299 * r + 0.587 * g + 0.114 * b;
+    // The same box is often read at several text sizes in a row.
+    const key = `${x0},${y0},${x1},${y1}`;
+    let lum;
+    if (lumCache.img === img && lumCache.key === key) lum = lumCache.lum;
+    else {
+      lum = new Float32Array(w * h);
+      const d = img.data;
+      for (let y = 0; y < h; y++) {
+        let q = ((y0 + y) * img.width + x0) * 4;
+        for (let x = 0; x < w; x++, q += 4) lum[y * w + x] = 0.299 * d[q] + 0.587 * d[q + 1] + 0.114 * d[q + 2];
+      }
+      Object.assign(lumCache, { img, key, lum });
     }
     const around = blur(lum, w, h, o.r || Math.max(3, Math.round(o.maxH / 3)));
-    const found = blobs(img, x0, y0, x1, y1, (px, py) => {
-      const i = (py - y0) * w + (px - x0);
-      const l = lum[i];
-      if (l < 45 || l - around[i] < Math.max(16, 0.3 * around[i])) return false;
-      const [r, g, b] = rgbAt(img, px, py);
-      return hsv(r, g, b)[1] < o.s;
-    }).filter((b) => b.h >= o.minH * 0.45 && b.h <= o.maxH && b.w <= o.maxH * 1.2 && b.n >= 4);
+    // Bright enough against its surroundings, and unsaturated (hsv's
+    // saturation, d / mx).
+    const mask = new Uint8Array(w * h);
+    const d = img.data;
+    for (let y = 0; y < h; y++) {
+      let q = ((y0 + y) * img.width + x0) * 4;
+      for (let x = 0; x < w; x++, q += 4) {
+        const i = y * w + x;
+        const l = lum[i];
+        if (l < 45 || l - around[i] < Math.max(16, 0.3 * around[i])) continue;
+        const r = d[q];
+        const g = d[q + 1];
+        const b = d[q + 2];
+        const mx = r > g ? (r > b ? r : b) : g > b ? g : b;
+        const mn = r < g ? (r < b ? r : b) : g < b ? g : b;
+        if ((mx ? (mx - mn) / mx : 0) < o.s) mask[i] = 1;
+      }
+    }
+    const found = maskBlobs(mask, w, h, x0, y0).filter((b) => b.h >= o.minH * 0.45 && b.h <= o.maxH && b.w <= o.maxH * 1.2 && b.n >= 4);
     // Lines: glyphs whose vertical middles line up.
     found.sort((a, b) => (a.y0 + a.y1) / 2 - (b.y0 + b.y1) / 2);
     const lines = [];
@@ -1693,7 +1805,8 @@
   function scan(img, ref) {
     const t0 = Date.now();
     const gray = grayOf(img);
-    let loc = locateBoard(img, gray, ref);
+    const sharp = blur(gray, img.width, img.height, 1);
+    let loc = locateBoard(img, gray, ref, sharp);
     // Real boards match their frame at 0.81 or more at every size tested;
     // instrument picks, popups and other screens stay near 0.5 or under. A
     // darkened board (a devour's meal pick) also matches weakly, but its
@@ -1704,7 +1817,6 @@
     }
     const notes = [];
     if (!loc || (!loc.byLabels && loc.score < 0.65)) return { ok: false, reason: 'No Tartarus prison board found in this picture.', loc, ms: Date.now() - t0 };
-    const sharp = blur(gray, img.width, img.height, 1);
     const cells = [];
     for (let n = 0; n < 16; n++) cells.push(readCell(img, sharp, loc, n, ref));
     const warden = findWarden(img, loc);

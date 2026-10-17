@@ -78,7 +78,15 @@
   };
   const paramsFor = (st) => PROFILES[st.mode === 'challenge' ? 'challenge' : st.params.rewards ? 'rewards' : 'notools'];
 
-  const withDefaults = (p) => Object.assign({}, DEFAULTS, p || {});
+  // Every decision asks for its parameters with the defaults filled in:
+  // made once for each set (none of them is ever changed).
+  const filled = new WeakMap();
+  const withDefaults = (p) => {
+    if (!p) return Object.assign({}, DEFAULTS);
+    let out = filled.get(p);
+    if (!out) filled.set(p, (out = Object.assign({}, DEFAULTS, p)));
+    return out;
+  };
 
   // Measured Rainbows per run for sets of up to 4 instruments held from day
   // 1 (js/tool-combos.js, from the lab's combos mode). Without it, the
@@ -1259,9 +1267,33 @@
   function clone(st) {
     const log = st.log;
     st.log = [];
-    const copy = JSON.parse(JSON.stringify(st));
+    const copy = jsonCopy(st);
     st.log = log;
     return copy;
+  }
+
+  // What JSON.parse(JSON.stringify(v)) makes of plain data, without the text
+  // in between (playouts copy the state thousands of times a second): keys
+  // holding undefined or a function are left out, and NaN, Infinity and -0
+  // become null, null and 0.
+  function jsonCopy(v) {
+    if (typeof v !== 'object' || v === null) return typeof v === 'number' ? (Number.isFinite(v) ? v + 0 : null) : v;
+    if (typeof v.toJSON === 'function') return JSON.parse(JSON.stringify(v));
+    if (Array.isArray(v)) {
+      const out = new Array(v.length);
+      for (let i = 0; i < v.length; i++) {
+        const x = v[i];
+        out[i] = x === undefined || typeof x === 'function' || typeof x === 'symbol' ? null : jsonCopy(x);
+      }
+      return out;
+    }
+    const out = {};
+    for (const k of Object.keys(v)) {
+      const x = v[k];
+      if (x === undefined || typeof x === 'function' || typeof x === 'symbol') continue;
+      out[k] = jsonCopy(x);
+    }
+    return out;
   }
 
   // Re-rolls everything the player can't see: the game's dice, and any

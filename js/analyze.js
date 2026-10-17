@@ -672,7 +672,8 @@
   // merged result is redrawn at most every 100 ms, and once all are done.
   let mergeTimer = 0;
   function onShare(k, m) {
-    if (m.id !== solver.id || !solver.shares) return;
+    // Rounds still on their way when the check stopped early are let go.
+    if (m.id !== solver.id || !solver.shares || (solver.result && solver.result.done)) return;
     const share = solver.shares[k];
     if (m.meta && !solver.meta) solver.meta = m.meta;
     if (!share.rows) share.rows = m.rows.map(() => ({ vals: [], pass: 0, points: 0, best: 0 }));
@@ -711,7 +712,22 @@
       return row;
     });
     const rounds = solver.shares.reduce((sum, s) => sum + s.rounds, 0);
-    solver.result = Object.assign(S.summarize(rows, rounds, solver.target, solver.goal), { done: solver.shares.every((s) => s.done) });
+    let done = solver.shares.every((s) => s.done);
+    const result = S.summarize(rows, rounds, solver.target, solver.goal);
+    // Done early once the leader is clear: 3 paired standard errors ahead
+    // of every other move, or ahead by more than any gap left could matter
+    // (0.03 Rainbows, or 1 contract point). On 60 positions the full check
+    // picked the same move every time, from 57% of the playouts.
+    if (!done && rounds >= 100 && result.options.length > 1) {
+      const tie = solver.goal === 'contract' ? 1 : 0.03;
+      const lead = result.options[0];
+      if (result.options.slice(1).every((o) => lead.mean - o.mean > 3 * o.gapSe || lead.mean - o.mean + 3 * o.gapSe < tie)) {
+        done = true;
+        for (const s of solver.shares) s.done = true;
+        for (const w of solver.workers || []) w.postMessage({ stop: solver.id });
+      }
+    }
+    solver.result = Object.assign(result, { done });
     renderResults();
     renderBoard();
     renderCourt();

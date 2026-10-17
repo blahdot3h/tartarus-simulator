@@ -18,7 +18,9 @@
 (function () {
   'use strict';
 
-  const POLL_MS = 1000;
+  // A look is a size check and the new bytes: cheap enough 4 times a
+  // second, and a move's settle time starts sooner.
+  const POLL_MS = 250;
   const IDB = 'tartarus-sim-capture';
   const listeners = { status: [], hit: [], seen: [], frame: [] };
   // detail: whether the game writes the detail lines the triggers come from

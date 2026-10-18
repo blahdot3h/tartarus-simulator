@@ -194,8 +194,17 @@ async function findLog() {
   logFoundBy = 'in the game folders';
   const roots = new Map();
   const addRoot = (p) => p && roots.set(path.resolve(p).toLowerCase(), path.resolve(p));
-  for (const [key, value] of [['HKCU\\Software\\Valve\\Steam', 'SteamPath'], ['HKLM\\SOFTWARE\\WOW6432Node\\Valve\\Steam', 'InstallPath'], ['HKLM\\SOFTWARE\\Valve\\Steam', 'InstallPath']]) addRoot(await regQuery(key, value));
-  addRoot('C:\\Program Files (x86)\\Steam');
+  if (process.platform === 'win32') {
+    for (const [key, value] of [['HKCU\\Software\\Valve\\Steam', 'SteamPath'], ['HKLM\\SOFTWARE\\WOW6432Node\\Valve\\Steam', 'InstallPath'], ['HKLM\\SOFTWARE\\Valve\\Steam', 'InstallPath']]) addRoot(await regQuery(key, value));
+    addRoot('C:\\Program Files (x86)\\Steam');
+  } else {
+    // Linux (Proton): Steam's usual homes, native and Flatpak.
+    const home = app.getPath('home');
+    for (const p of ['.steam/steam', '.local/share/Steam', '.var/app/com.valvesoftware.Steam/.local/share/Steam']) {
+      const full = path.join(home, p);
+      if (statOf(full)) addRoot(fs.realpathSync(full));
+    }
+  }
   const libraries = new Map(roots);
   for (const root of roots.values()) {
     try {
@@ -218,7 +227,7 @@ async function findLog() {
       // The game isn't in this library.
     }
   }
-  for (const base of ['C:\\Program Files (x86)\\Torchlight Infinite', 'C:\\Program Files\\Torchlight Infinite']) {
+  if (process.platform === 'win32') for (const base of ['C:\\Program Files (x86)\\Torchlight Infinite', 'C:\\Program Files\\Torchlight Infinite']) {
     logs.push(path.join(base, 'Game', 'UE_game', 'Torchlight', 'Saved', 'Logs', 'UE_game.log'));
   }
   for (const p of [...logs]) if (virtualStore(p)) logs.push(virtualStore(p));

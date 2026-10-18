@@ -61,6 +61,18 @@ if (arg('user-data')) app.setPath('userData', path.resolve(arg('user-data')));
 // an old, narrow picture of its page: every window draws as if in front.
 app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+// Linux: under Wayland the capture goes through the desktop's portal, which
+// asks the player to pick a window at each look and names none of them. On
+// X11 (XWayland, where the game runs under Proton) windows are listed by
+// their titles, as on Windows. There, Chromium's GPU process crashes when the
+// game's window share starts (NVIDIA), three times and the app closes: the
+// pages draw nothing the processor can't.
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('ozone-platform', 'x11');
+  process.env.XDG_SESSION_TYPE = 'x11';
+  delete process.env.WAYLAND_DISPLAY;
+  app.disableHardwareAcceleration();
+}
 app.setAppUserModelId('io.github.blahdot3h.tartarus-overlay');
 
 // ---------- Settings ----------

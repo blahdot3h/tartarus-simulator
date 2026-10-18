@@ -76,7 +76,7 @@
     });
     const tools = names && names.tools && names.tools.length ? names.tools.join(', ') : (b.tools || []).join(', ') || 'none';
     const court = h('div', { class: 'court', style: 'grid-row:2/4;grid-column:2/6' },
-      h('p', null, h('b', null, `Day ${b.day} of ${b.maxDays}`), ` · step: ${b.step}`, b.mode === 'challenge' ? ' · contract challenge' : ''),
+      h('p', null, h('b', null, `Day ${b.day} of ${b.maxDays}`), ` · step: ${b.step}`),
       h('p', null, `Instruments: ${tools}`),
       h('p', null, `Chromatic prisoners: ${(b.vault || []).length} · objective: ${b.objective}${b.milestone ? ' (completed)' : ''}`),
       b.step === 'choice' && b.choice ? h('p', null, `On offer (${b.choice.kind}): ${(names && names.choice && names.choice.length ? names.choice : b.choice.options || []).join(', ') || 'none'}${b.choice.rerolls ? `, ${b.choice.rerolls} re-roll left` : ''}`) : null,

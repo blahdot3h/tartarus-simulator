@@ -186,6 +186,9 @@
       toolsConfirm: shown($('az-tools-confirm')) ? text($('az-tools-confirm-text')) : '',
       // A Warden's Treasure waits for the board behind it (View Prison Status).
       treasureWait: shown($('az-treasure-wait')),
+      // A screen the reader didn't recognize on a game client not in English
+      // ({ what, at, lang }): its screenshot can be sent from the analyzer.
+      langMiss: A && typeof A.langMiss === 'function' ? A.langMiss() : null,
       riot: riot && riot.value !== '' ? Number(riot.value) : null,
       dayof: text($('az-dayof')),
       step: text(step),

@@ -683,6 +683,7 @@ function tunePage(name) {
     note(`${name} page priority not set:`, String((e && e.message) || e));
   }
   // The analyzer's API may come a moment after the page.
+  if (name === 'analyzer' && pageOf(wc.getURL()) === PAGES.analyzer) setTimeout(readGameLang, 3000);
   if (name === 'analyzer' && pageOf(wc.getURL()) === PAGES.analyzer) {
     wc.executeJavaScript(`(function cap(n, tries) {
       if (window.TartarusAnalyzer && TartarusAnalyzer.setCores) return TartarusAnalyzer.setCores(n);
@@ -690,6 +691,30 @@ function tunePage(name) {
       return null;
     })(${cpuUse().workers}, 30)`).then((n) => n && note(`analyzer: at most ${n} ${n === 1 ? 'worker' : 'workers'}`)).catch(() => {});
   }
+}
+// The game's language, for the analyzer (its window is hidden in the app):
+// on a client not in English, it warns that doors, decisions, instruments
+// and printed names may need setting by hand, and offers to send a screen
+// it didn't recognize. Kept by the analyzer page; read back for the menu.
+const GAME_LANGS = [['en', 'English'], ['ru', 'Русский (Russian)'], ['zh', '中文 (Chinese)']];
+let gameLang = 'en';
+function readGameLang() {
+  const wc = wins.analyzer && !wins.analyzer.isDestroyed() ? wins.analyzer.webContents : null;
+  if (!wc) return;
+  wc.executeJavaScript('window.TartarusAnalyzer && TartarusAnalyzer.gameLang ? TartarusAnalyzer.gameLang() : "en"').then((code) => {
+    if (code && code !== gameLang) {
+      gameLang = code;
+      rebuildMenu();
+    }
+  }).catch(() => {});
+}
+function setGameLang(code) {
+  const wc = wins.analyzer && !wins.analyzer.isDestroyed() ? wins.analyzer.webContents : null;
+  if (!wc) return;
+  gameLang = code;
+  note(`game language: ${code}`);
+  wc.executeJavaScript(`window.TartarusAnalyzer && TartarusAnalyzer.setGameLang ? TartarusAnalyzer.setGameLang(${JSON.stringify(code)}) : null`).catch(() => {});
+  rebuildMenu();
 }
 function setCpu(key) {
   if (!CPU_USE[key]) return;
@@ -1455,6 +1480,10 @@ function rebuildMenu() {
     { label: 'Take a picture now', accelerator: HOTKEYS.capture, click: () => command('capture') },
     { label: 'Auto Screenshot Mode (status and agreement)', click: () => show('follow') },
     { label: 'Choose the game log…', click: () => pickLog() },
+    {
+      label: 'Game language',
+      submenu: GAME_LANGS.map(([code, label]) => ({ label, type: 'radio', checked: gameLang === code, click: () => setGameLang(code) })),
+    },
     {
       label: 'Processor use',
       submenu: [

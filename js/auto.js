@@ -95,6 +95,8 @@
       // The run's objective popup: which objective, from its title.
       const read = await A.readObjective(bitmap);
       answer({ read });
+      // On a client not in English, its screenshot can be sent.
+      if (!read.ok && A.langMissed) A.langMissed('objective or start-of-run card', bitmap, read.reason);
       if (read.ok && mine === newest) answer({ state: 'used', asked: A.useObjective(read) });
       return;
     }
@@ -106,6 +108,7 @@
       const fresh = pickFresh;
       const read = await A.readPick(bitmap);
       answer({ read });
+      if ((!read.ok || read.unsure) && A.langMissed) A.langMissed('instrument offer', bitmap, read.ok ? `${read.unsure} of the cards not read` : read.reason);
       if (!read.ok || mine !== newest) return;
       const asked = A.usePick(read, fresh);
       answer({ state: 'used', asked });
@@ -146,6 +149,7 @@
     // The newest picture wins: an older one still being read is left.
     if (!read.ok || mine !== newest) return;
     A.useReading();
+    if (A.langBoard) A.langBoard(bitmap);
     lastBoardAt = Date.now();
     answer({ state: 'used' });
     // The board behind a Warden's Treasure: the gift advice uses it.
@@ -223,6 +227,8 @@
     if (m.type === 'hello') announce();
     else if (m.type === 'status') {
       status = m;
+      // The game's language, from its log (follow.html).
+      if (m.lang && A.setGameLang) A.setGameLang(m.lang, true);
       heard = Date.now();
       renderFollow();
     } else if (m.type === 'frame' && m.to === me && (m.pixels || m.blob || m.kind === 'treasure')) onPicture(m).catch((err) => console.error(err));

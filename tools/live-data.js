@@ -428,17 +428,14 @@ function measure(rows) {
   const tiers = (list) => distribution(list.map((o) => o.tier), TIERS, P.tierWeights);
   const beasts = (list) => distribution(list.filter((o) => o.tier < T.RAINBOW).map((o) => BEASTS.indexOf(o.beast)), BEASTS.map(T.beastName), P.beastWeights);
 
-  // Day 1: how many sealed doors show an event.
-  let sealed = 0;
-  let marked = 0;
+  // Day 1: how many runs' first boards show an event behind a door.
+  let firstBoards = 0;
+  let withEvent = 0;
   for (const row of firsts) {
     const B = row.board;
     if (B.day !== 1 || B.step !== 'patrol') continue;
-    for (const c of B.cells) {
-      if (c.kind !== 'sealed' && c.kind !== 'scratch') continue;
-      sealed += 1;
-      if (c.event) marked += 1;
-    }
+    firstBoards += 1;
+    if (B.cells.some((c) => (c.kind === 'sealed' || c.kind === 'scratch') && c.event)) withEvent += 1;
   }
 
   // Without the instruments that change who comes in: Hangman's Noose, the
@@ -491,8 +488,8 @@ function measure(rows) {
       beasts: beasts(obs.scratch),
     },
     events: {
-      about: 'Special events behind doors. Simulator: eventChance per sealed cell at the start, then a 50/50 Chain reaction or Execution.',
-      dayOneDoorsWithEvents: rate(marked, sealed, P.eventChance / 100),
+      about: 'Special events behind doors. Simulator: one behind a random locked door at the start of eventStartChance % of runs, then more at random (eventMorningChance, eventWalkChance, eventActionChance), each seen at once.',
+      dayOneBoardsWithEvents: rate(withEvent, firstBoards, P.eventStartChance / 100),
       chainReactions: rate(obs.events.filter((e) => e.kind === 'chain').length, obs.events.length, 0.5),
       unmarkedDoorsWithEvents: obs.events.filter((e) => !e.marked).length,
       markedDoorsWithoutEvents: obs.eventless,
@@ -550,7 +547,7 @@ function print(o) {
   printRate('Key Ring opens the side doors', o.sideDoors.keyRing);
   if (o.sideDoors.withoutKeyRing.opened) console.log(`  Note: ${o.sideDoors.withoutKeyRing.opened} side doors opened without the Key Ring.`);
   printRate('Scratched doors hold the rarity shown', o.scratchedDoors.rarityAsShown);
-  printRate('Day 1 doors with an event', o.events.dayOneDoorsWithEvents);
+  printRate('Day 1 first boards with an event', o.events.dayOneBoardsWithEvents);
   printRate('Events that are Chain reactions', o.events.chainReactions);
   if (o.events.unmarkedDoorsWithEvents) console.log(`  Note: ${o.events.unmarkedDoorsWithEvents} events came from doors not marked with one.`);
   printRate('Mornings with fewer doors', o.mornings.fewerDoors);

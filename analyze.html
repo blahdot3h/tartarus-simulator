@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600;700&family=Big+Shoulders+Stencil+Display:wght@600;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="css/style.css?v=20261017f">
+<link rel="stylesheet" href="css/style.css?v=20261017h">
 </head>
 <body>
 <main class="analyzer" id="analyzer">
@@ -52,6 +52,13 @@
       </div>
     </div>
     <p class="az-scan-status" id="az-scan-status" aria-live="polite"></p>
+    <p class="az-scan-lang"><label>Game language: <select id="az-game-lang">
+          <option value="en">English</option>
+          <option value="ru">Русский</option>
+          <option value="zh">中文</option>
+          <option value="other">Another</option>
+        </select></label></p>
+    <p class="field-note az-lang-note" id="az-lang-note" hidden></p>
     <div class="az-scan-links">
       <button type="button" class="link" id="az-scan-show" hidden>Show the screenshot</button>
       <button type="button" class="link" id="az-scan-back" hidden>Go back to the board before it</button>
@@ -343,15 +350,15 @@
   </footer>
 </main>
 
-<script src="js/engine.js?v=20261017f"></script>
-<script src="js/board.js?v=20261017f"></script>
-<script src="js/tool-combos.js?v=20261017f"></script>
-<script src="js/solver.js?v=20261017f"></script>
-<script src="js/live.js?v=20261017f"></script>
-<script src="js/report.js?v=20261017f"></script>
-<script src="js/capture.js?v=20261017f"></script>
-<script src="js/analyze.js?v=20261017f"></script>
-<script src="js/auto.js?v=20261017f"></script>
-<script src="js/update.js?v=20261017f"></script>
+<script src="js/engine.js?v=20261017h"></script>
+<script src="js/board.js?v=20261017h"></script>
+<script src="js/tool-combos.js?v=20261017h"></script>
+<script src="js/solver.js?v=20261017h"></script>
+<script src="js/live.js?v=20261017h"></script>
+<script src="js/report.js?v=20261017h"></script>
+<script src="js/capture.js?v=20261017h"></script>
+<script src="js/analyze.js?v=20261017h"></script>
+<script src="js/auto.js?v=20261017h"></script>
+<script src="js/update.js?v=20261017h"></script>
 </body>
 </html>

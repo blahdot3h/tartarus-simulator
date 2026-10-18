@@ -661,12 +661,9 @@
         const worth = eventWorth(ctx, board.comp);
         const pool = st.eventPool || T.EVENT_POOL;
         const anyEvent = () => pool.reduce((sum, id) => sum + worth[id](), 0) / pool.length;
-        // An event shows once the warden has walked past its door. A door
-        // not yet passed may still hide one; a seen event whose kind the
-        // player can't see is any of them, evenly.
-        if (c.seen === false) {
-          score += (st.params.eventChance / 100) * anyEvent();
-        } else if (c.event && c.eventKnown === false) {
+        // Events show as they appear (no door hides one unseen); one whose
+        // kind the player can't see is any of them, evenly.
+        if (c.event && c.eventKnown === false) {
           score += anyEvent();
           why = 'a special event waits behind the door';
         } else if (c.event && worth[c.event]) {
@@ -1271,11 +1268,10 @@
     st.rng = (random() * 4294967296) >>> 0;
     for (const c of st.cells) {
       // An event whose kind the player can't see (behind a door, or in an
-      // open cell) is any of them, evenly. A door the warden hasn't walked
-      // past may hide one the player can't see.
+      // open cell) is any of them, evenly. Events to come turn up in the
+      // playouts by the engine's own dice.
       const pool = st.eventPool || T.EVENT_POOL;
       if (c.event && c.eventKnown === false) c.event = pool[Math.floor(random() * pool.length)];
-      if (c.sealed && c.seen === false && !c.nest) c.event = random() * 100 < st.params.eventChance ? pool[Math.floor(random() * pool.length)] : null;
       if (!c.sealed || !c.hidden || c.known >= 2) continue;
       if (c.known === 1) c.hidden.beast = BEASTS[Math.floor(random() * 4)];
       else c.hidden = null;

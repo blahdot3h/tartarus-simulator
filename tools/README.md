@@ -99,6 +99,20 @@ The two-meal chain's challenge profile had a one-round tune (5.2 million runs, 7
 
 The Chinese sim's two-meal food chain (Mammoth also eats Wolf, Lion also eats Rat) was confirmed not to be in the live game on 2026-10-15, so it was removed from the simulator and the lab. The older sections below still show the two-meal numbers measured at the time; their files are in the git history.
 
+### Events appear at random, seen at once (2026-10-17, evening)
+
+The user: "you need to pass a cell in order for an event to spawn ... isn't the case, events can spawn anywhere on the board at random on any turn". Until now the simulator hid an event behind each locked door at 5% at the start, showed it only once the warden walked past, and added new ones only by Instigate or when an emptied cell sealed again (5%).
+
+Players' boards agree with the user (147,602 screenshot boards in 5,288 games, ids 750,000 on; scratch tools event-appear.js and event-spawn.js):
+- **Before any walk:** 72% of runs' first boards (day 1, the warden in the office) already show an event: one on 2,760 of 3,946, two on 56, none on 1,130.
+- **Where new ones turn up:** of the doors gaining an event between two boards, 1,505 were on the warden's walk, 1,132 came with an office stop (Instigate), and 8,512 were neither, all on locked doors.
+- **Real, mostly:** 85% stay until their door opens; 15% vanish with the door still locked (likely misreads).
+- **When:** after the patrol's walk (10.0% of walks), overnight (5.8% of nights), after a move during the day (4.7%). About 1 game-day in 8 shows a new one, almost always just one.
+
+So now (`spawnEvent`): a run starts with one event behind a random locked door at 72% (`eventStartChance`). Then a new one appears behind a random locked door without one (and not a rat nest) at 5% each morning from day 2 (`eventMorningChance`), 9% after the patrol's move (`eventWalkChance`), and 4% after a Consume (once its chain is over), Replace, Hunt or event choice (`eventActionChance`). These are the measured rates less the 15% of misreads, in whole percent. Every event shows at once. Walking past a door reveals nothing, an emptied cell that seals again gets no roll of its own, and an event a save kept hidden shows on loading. The strategy no longer values a door the warden hasn't passed for a hidden event, and its playouts no longer re-roll such events.
+
+On 300 runs played by the strategy: 71% start with an event, and 0.18 new events appear a day. The numbers in the sections below were measured under the old rule; the lab needs measuring again.
+
 ### Measured again with the vault cap and Instigate (2026-10-17)
 
 With the vault's 10 slots and Instigate's events (2 on a board with no event yet, else 1) in the engine, and the Filthy Claws and the Blood-Stained Trap among the instruments, the instrument pairs, the guide and the contract challenge were measured again from scratch on 4 threads (the engine and solver of bebf979).
@@ -597,7 +611,7 @@ It measures:
 - swaps,
 - Ring of Keys side doors,
 - scratched doors,
-- the day-1 event rate (`eventChance`) and the Chain/Execution split,
+- the share of runs whose first board shows an event (`eventStartChance`) and the Chain/Execution split,
 - doors per morning (`fewerDoorsChance`) and how far ahead they are, which settles whether the office counts as a patrol step,
 - devours and tool offers.
 

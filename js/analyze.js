@@ -813,10 +813,10 @@
       showProblems(problems);
       return;
     }
+    // An event whose kind wasn't seen is any of them. Doors hide none unseen:
+    // events show as they appear, and new ones come from the engine's dice.
     for (const c of st.cells) {
       if (c.event && c.eventKnown === false) c.event = T.EVENT_POOL[Math.floor(Math.random() * T.EVENT_POOL.length)];
-      // A door not marked with an event may hide one nobody has seen.
-      if (c.sealed && c.seen === false && !c.nest && Math.random() * 100 < st.params.eventChance) c.event = T.EVENT_POOL[Math.floor(Math.random() * T.EVENT_POOL.length)];
     }
     const before = JSON.parse(JSON.stringify(model));
     const label = labelFor(action);
@@ -1691,6 +1691,79 @@
     if (kind !== 'busy' && !sticky) toastTimer = setTimeout(() => (box.hidden = true), actions && actions.length ? 15000 : 6000);
   }
 
+  // ---------- The game's language ----------
+  // The reader learned on the English client. A board reads in any language
+  // (portraits, frames, digits), but printed names are matched as English
+  // words: the instrument offer's cards, the objective and start-of-run
+  // cards, the Warden's Treasure screen. On another client the player is
+  // told so, sets those by hand, and can send a screen the reader didn't
+  // recognize in one click, so it can learn that language (the user,
+  // 2026-10-17). Set here, or from the game's log (Auto Screenshot Mode).
+  const GAME_LANGS = { en: 'English', ru: 'Russian', zh: 'Chinese' };
+  const LANG_KEY = 'tartarus-sim:game-lang:v1';
+  const LANG_NOTES = {
+    ru: 'Игра на русском языке. Анализатор обучен на английском клиенте: клетки, звери и редкость на поле читаются на любом языке, но двери дня, кнопки замены и поглощения, ваши инструменты, счётчик хроматических заключённых, предложения инструментов, цели и карты начала забега читаются по английскому тексту. Укажите их вручную (двери — в разделе «Which door to patrol»), а если экран не распознан, отправьте его кнопкой «Send this screenshot», чтобы анализатор научился читать русский клиент.',
+    zh: '游戏为中文客户端。分析器是基于英文客户端训练的：棋盘上的格子、野兽和稀有度在任何语言下都能识别，但当天的门、替换和吞噬按钮、你的刑具、彩色囚犯数量、刑具选择、本局目标和开局卡牌是按英文文字识别的。请手动设置这些内容（门在“Which door to patrol”中设置）；若某个画面未被识别，请点击“Send this screenshot”发送截图，帮助分析器学会识别中文客户端。',
+  };
+  let gameLang = 'en';
+  try {
+    gameLang = localStorage.getItem(LANG_KEY) || 'en';
+  } catch (e) {
+    // The default, then.
+  }
+  const langName = (code) => GAME_LANGS[code] || 'another language';
+  function langNote() {
+    if (gameLang === 'en') return '';
+    return `Your game is in ${langName(gameLang)}. The reader learned on the English client: the board's cells, beasts and rarities read in any language, but today's doors, the Replace and Consume buttons, your instruments, the Chromatic count, instrument offers, objectives and start-of-run cards are read by their English text. Set those by hand (the doors under “Which door to patrol”), and when a screen isn't recognized, please send it with the button that comes up, so the reader can learn your language.${LANG_NOTES[gameLang] ? `\n\n${LANG_NOTES[gameLang]}` : ''}`;
+  }
+  function renderLang() {
+    const sel = $('az-game-lang');
+    if (sel) sel.value = GAME_LANGS[gameLang] ? gameLang : 'other';
+    const note = $('az-lang-note');
+    if (note) {
+      note.textContent = langNote();
+      note.hidden = gameLang === 'en';
+    }
+  }
+  // auto: from the game's log, which wins only when it says something new.
+  function setGameLang(code, auto) {
+    const c = String(code || 'en').slice(0, 2).toLowerCase() || 'en';
+    if (c === gameLang) return gameLang;
+    gameLang = c;
+    try {
+      localStorage.setItem(LANG_KEY, c);
+    } catch (e) {
+      // Kept for this page only.
+    }
+    renderLang();
+    if (auto && c !== 'en') toast(langNote().split('\n')[0], 'ok');
+    return gameLang;
+  }
+  // A screen the reader didn't recognize on a client not in English: the
+  // player is told, and can send it (the report form, with the picture).
+  let langMiss = null; // { what, image, detail, at }
+  function langMissed(what, image, detail) {
+    if (gameLang === 'en' || !image) return false;
+    langMiss = { what, image, detail: String(detail || ''), at: Date.now() };
+    toast(`The ${what} wasn't recognized: your game is in ${langName(gameLang)}. Set it by hand, and please send us this screenshot so the reader can learn your language.`, 'bad', [{ id: 'lang-report', label: 'Send this screenshot', primary: true }]);
+    return true;
+  }
+  // On such a client, a board's screenshot is asked for once a session: its
+  // door cards and buttons teach the reader that language's text.
+  let langBoardAsked = false;
+  function langBoard(image) {
+    if (gameLang === 'en' || langBoardAsked || !image) return false;
+    langBoardAsked = true;
+    langMiss = { what: 'board', image, detail: 'a board, for its door cards and buttons', at: Date.now() };
+    toast(`Your game is in ${langName(gameLang)}: today's doors and the Replace and Consume buttons may not be read, so set them by hand. Sending this board's screenshot once helps the reader learn your language.`, 'ok', [{ id: 'lang-report', label: 'Send this screenshot', primary: true }]);
+    return true;
+  }
+  function sendLangMiss() {
+    if (!langMiss || !window.TartarusReport) return;
+    const tag = Math.random().toString(36).slice(2, 8);
+    TartarusReport.open('other', { name: `${langName(gameLang)} ${langMiss.what} ${tag}`, image: langMiss.image, outcome: `Game language: ${gameLang}. Not recognized: the ${langMiss.what}${langMiss.detail ? ` (${langMiss.detail})` : ''}.` });
+  }
+
   function scanStatus(text, bad) {
     const el = $('az-scan-status');
     el.textContent = text;
@@ -2058,6 +2131,7 @@
       useTreasure();
       return true;
     }
+    langMissed('screen', source, pick.ok ? 'instrument cards not read' : pick.reason);
     return false;
   }
 
@@ -2814,6 +2888,8 @@
   }
 
   function bind() {
+    renderLang();
+    $('az-game-lang').addEventListener('change', (ev) => setGameLang(ev.target.value === 'other' ? 'xx' : ev.target.value));
     // Beast and rarity pickers, built once.
     $('az-beasts').innerHTML = T.BEASTS.map((b) => `<button type="button" class="az-beast" data-v="${b}">${B.PORTRAITS[b]}<span>${esc(T.beastName(b))}</span></button>`).join('');
     $('az-tiers').innerHTML = T.TIERS.slice(0, TOP_TIER + 1).map((name, t) => `<button type="button" class="az-tier t${t}" data-v="${t}">${esc(name)}</button>`).join('');
@@ -3130,6 +3206,13 @@
       usePick: (read, fresh) => usePick(read, fresh),
       readTreasure: (bitmap) => readTreasure(bitmap),
       readObjective: (bitmap) => readObjective(bitmap),
+      // The game's language (from the log: auto), and a screen the reader
+      // didn't recognize on a client not in English.
+      setGameLang: (code, auto) => setGameLang(code, auto),
+      gameLang: () => gameLang,
+      langMissed: (what, image, detail) => langMissed(what, image, detail),
+      langBoard: (image) => langBoard(image),
+      langMiss: () => (langMiss ? { what: langMiss.what, at: langMiss.at, lang: langName(gameLang) } : null),
       useObjective: (read) => useObjective(read),
       useTreasure: (after) => useTreasure(after),
       // Auto Screenshot Mode's Treasure counts ({ rainbows, taken }): the
@@ -3170,6 +3253,7 @@
       if (!b) return;
       $('az-toast').hidden = true;
       if (b.dataset.toast === 'pick') $('az-scan-file').click();
+      else if (b.dataset.toast === 'lang-report') sendLangMiss();
       else $('az-scan').scrollIntoView({ block: 'start', behavior: 'smooth' });
     });
     $('az-treasure-now').addEventListener('click', () => {

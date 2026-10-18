@@ -85,7 +85,13 @@
     swapWeights: [52, 32, 9, 6, 1.5],
     beastWeights: [25, 25, 25, 25],
     doubleEatTier: 3,
-    eventChance: 5,
+    // Special events turn up on random locked doors, seen at once (players'
+    // boards, 2026-10-17): one at the start of 72% of runs, then a chance
+    // each morning, after the patrol's walk and after each other move.
+    eventStartChance: 72,
+    eventMorningChance: 5,
+    eventWalkChance: 9,
+    eventActionChance: 4,
     executionSameTier: false,
     executionRerolls: false,
     ivoryCount: 4,
@@ -114,7 +120,10 @@
     { key: 'swapWeights', group: 'Odds', label: 'Rarity weights for the inmate a Replace brings in', type: 'list', names: TIERS.slice(0, 5) },
     { key: 'beastWeights', group: 'Odds', label: 'Beast weights for new inmates', type: 'list', names: ['Mammoth', 'Lion', 'Wolf', 'Rat'] },
     { key: 'doubleEatTier', group: 'Odds', label: 'From this rarity up, Mammoths also eat Wolves and Lions also eat Rats (0 Normal, 1 Magic, 2 Rare, 3 Legendary, 4 Supreme; 5: never)', type: 'int', min: 0, max: 5 },
-    { key: 'eventChance', group: 'Special events', label: 'Chance a sealed cell hides a special event, seen once the warden walks past it (%)', type: 'int', min: 0, max: 100 },
+    { key: 'eventStartChance', group: 'Special events', label: 'Chance a run starts with a special event behind a random locked door (%)', type: 'int', min: 0, max: 100 },
+    { key: 'eventMorningChance', group: 'Special events', label: 'Chance a special event appears behind a random locked door each morning (%)', type: 'int', min: 0, max: 100 },
+    { key: 'eventWalkChance', group: 'Special events', label: 'Chance one appears after the patrol’s walk (%)', type: 'int', min: 0, max: 100 },
+    { key: 'eventActionChance', group: 'Special events', label: 'Chance one appears after a Consume, Replace, Hunt or special event (%)', type: 'int', min: 0, max: 100 },
     { key: 'eventTwoDoors', group: 'Special events', label: 'A morning whose doors include an event offers only 2 doors', type: 'bool' },
     { key: 'executionSameTier', group: 'Special events', label: 'Execution takes same-rarity prey (off: lower rarity only)', type: 'bool' },
     { key: 'executionRerolls', group: 'Special events', label: "Execution re-rolls the executioner's beast", type: 'bool' },
@@ -619,7 +628,8 @@
   };
 
   // Empties a cell. With reusable cells it seals again and will hold someone
-  // new the next time it opens, unseen again: it may hide a new special event.
+  // new the next time it opens, unseen again. A special event may turn up on
+  // it later, as on any locked door (spawnEvent).
   function emptyCell(state, cell) {
     const inmate = cell.inmate;
     cell.inmate = null;
@@ -631,8 +641,24 @@
     cell.ivory = false;
     cell.sealed = !!state.params.reusableCells;
     cell.seen = false;
-    cell.event = cell.sealed && rand(state) * 100 < state.params.eventChance ? rollEvent(state) : null;
+    cell.event = null;
     return inmate;
+  }
+
+  // A special event turns up behind a random locked door that has none (and
+  // isn't a rat nest), with `chance` %, and shows at once. Players' boards
+  // (147,602 screenshot boards, 2026-10-17) have events appearing anywhere,
+  // at any point of a day, not only behind doors the warden walks past (the
+  // user: "events can spawn anywhere on the board at random on any turn").
+  function spawnEvent(state, chance) {
+    if (!(chance > 0) || rand(state) * 100 >= chance) return null;
+    const free = state.cells.filter((c) => c.n !== OFFICE && c.sealed && !c.event && !c.nest);
+    if (!free.length) return null;
+    const cell = pickOne(state, free);
+    cell.event = rollEvent(state);
+    cell.seen = true;
+    log(state, 'event', `A special event now waits behind cell ${cellLabel(cell.n)}.`, { type: 'spawn', cell: cell.n });
+    return cell;
   }
 
   // The run's objective is met: with rewards on, it earns a tool (pick one
@@ -766,8 +792,9 @@
 
   // ---------- Setup ----------
 
-  // The office is never sealed and never holds anyone. `seen` turns on when
-  // the warden walks past a sealed cell: only then does its event show.
+  // The office is never sealed and never holds anyone. `seen`: whether a
+  // cell's event shows. Events are seen as they appear (spawnEvent); saves
+  // and boards from before that rule may still hold unseen ones.
   function blankCell(n) {
     return { n, sealed: n !== OFFICE, inmate: null, hidden: null, known: 0, atLeast: 0, scratch: false, nest: null, event: null, ivory: false, seen: false };
   }
@@ -816,7 +843,9 @@
       challenge: null,
       result: null,
     };
-    for (const cell of state.cells) if (cell.sealed && rand(state) * 100 < params.eventChance) cell.event = rollEvent(state);
+    // Most runs start with one special event showing (72% of players' first
+    // boards: one, 1.4% two, the rest none).
+    spawnEvent(state, params.eventStartChance);
     log(state, 'day', `Day 1 of ${state.maxDays}.`);
     const goal = OBJECTIVES[state.objective.id];
     log(state, 'tool', `Objective: ${goal.name}. ${goal.text}.`);
@@ -1024,6 +1053,9 @@
     }
     if (has(state, 'ravenous')) ravenousChains(state, events);
     if (has(state, 'coin')) coinOfFate(state, events);
+    // A morning's new special event, before the doors are drawn (day 1 has
+    // the run's start instead).
+    if (state.day > 1) spawnEvent(state, state.params.eventMorningChance);
     rollDestinations(state);
   }
 
@@ -1171,13 +1203,11 @@
     if (!state.destinations.includes(n)) return fail(state.ratway ? 'The Sewer Ratway goes to any cell but the office.' : 'Patrol one of today’s destinations.');
     const events = [{ type: 'move', from: state.position, to: n }];
     const cell = state.cells[n];
-    // The Sewer Ratway's move isn't a walk: no tiles, nothing seen on the way.
+    // The Sewer Ratway's move isn't a walk: no tiles.
     const ratway = !!state.ratway;
     state.ratway = false;
     const steps = ratway ? 0 : stepsBetween(state.position, n);
     if (!ratway) state.stats.patrols += 1;
-    // The doors the warden walks past are seen: any event behind them shows.
-    if (!ratway) for (const k of clockwisePath(state, n)) if (k !== n) state.cells[k].seen = true;
     let event = null;
     if (state.chain && !ratway) {
       const path = clockwisePath(state, n);
@@ -1203,6 +1233,8 @@
     state.position = n;
     checkPrey(state);
     if (!ratway) walked(state, steps, events);
+    // The move's chance of a new special event elsewhere on the block.
+    spawnEvent(state, state.params.eventWalkChance);
     if (event && state.cells[n].inmate) {
       state.phase = 'event';
       state.event = { kind: event, cell: n };
@@ -2393,7 +2425,9 @@
     const ch = data.chaining;
     data.chaining = ch && Array.isArray(ch.bites) && ch.bites.length && boardCellOf(data, ch.eater) ? { eater: ch.eater, at: clamp(Number(ch.at) || 0, 0, data.log.length), bites: ch.bites } : null;
     // Saves from before events hid until passed showed every event.
-    for (const c of data.cells) if (c.seen === undefined) c.seen = true;
+    // Events show as they appear, so an event a save kept hidden (from
+    // before that rule) shows now.
+    for (const c of data.cells) if (c.seen === undefined || c.event) c.seen = true;
     data.eventPool = Array.isArray(data.eventPool) && data.eventPool.length ? data.eventPool.filter((id) => EVENTS[id]) : EVENT_POOL.slice();
     data.ratway = !!data.ratway && data.phase === 'patrol';
     delete data.chainConsume;
@@ -2406,6 +2440,15 @@
     trimLog(state);
     return result;
   };
+  // A move (Consume, Replace, Hunt, a special event's choice) has its own
+  // chance of a new special event on a random locked door, once it's made:
+  // a Consume once its chain is over, however it ends (played on to the end,
+  // or stopped with Cancel), so a chain counts once.
+  const acted = (fn) => (state, ...args) => {
+    const result = fn(state, ...args);
+    if (result && result.ok && !state.chaining) spawnEvent(state, state.params.eventActionChance);
+    return result;
+  };
 
   const api = {
     VERSION, CELL_COUNT, OFFICE, SUPREME, RAINBOW, VAULT_SLOTS, TIERS, BEASTS, BEAST_INFO, FOOD_CHAIN, SECOND_MEAL, PRESSURE, ESCORTS, TOOLS, TOOL_IDS, GIFTS, GIFT_IDS,
@@ -2413,13 +2456,13 @@
     LOADOUTS, SCENARIOS, CONTRACT_SLOTS, DEFAULT_PARAMS, PARAM_FIELDS, CHALLENGE_DAYS, START_VOUCHERS,
     newGame, randomSeed, normalizeParams, serialize, deserialize,
     patrol: bounded(patrol),
-    resolveEvent: bounded(resolveEvent),
-    devour: bounded(devour),
-    chainBite: bounded(chainBite),
-    stopChain: bounded(stopChain),
+    resolveEvent: bounded(acted(resolveEvent)),
+    devour: bounded(acted(devour)),
+    chainBite: bounded(acted(chainBite)),
+    stopChain: bounded(acted(stopChain)),
     officeAct: bounded(officeAct),
-    swap: bounded(swap),
-    hunt: bounded(hunt),
+    swap: bounded(acted(swap)),
+    hunt: bounded(acted(hunt)),
     endDay: bounded(endDay),
     endRun: bounded(endRun),
     deliver: bounded(deliver),

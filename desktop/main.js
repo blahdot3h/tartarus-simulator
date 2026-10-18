@@ -61,6 +61,9 @@ if (arg('user-data')) app.setPath('userData', path.resolve(arg('user-data')));
 // an old, narrow picture of its page: every window draws as if in front.
 app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+// The app never plays sound: no page it loads, now or after a site change,
+// can make any (the user heard sounds in the background while gaming).
+app.commandLine.appendSwitch('mute-audio');
 // Linux: under Wayland the capture goes through the desktop's portal, which
 // asks the player to pick a window at each look and names none of them. On
 // X11 (XWayland, where the game runs under Proton) windows are listed by
@@ -98,6 +101,10 @@ const settings = Object.assign({
   recordLimitMB: 1024, // debug build (--dev): the record's room on disk, pictures included
   recordRuns: 5, // normal build: the runs the record keeps
   consent: null, // { version, at }: the player agreed on follow.html in the app, to that version
+  // When Windows won't share the game window: the player's answer in the
+  // overlay to sharing the screen it's on instead ({ on, at }), null until
+  // asked. Cleared when the agreement is withdrawn.
+  screenShare: null,
   logPath: '', // a log the player chose, when the app didn't find it
   analyzer: null, // the analyzer window's bounds
 }, readJson(SETTINGS_FILE));
@@ -185,23 +192,64 @@ const statOf = (p) => {
 // a log yet, a folder of an installed game, where it appears once the game
 // starts.
 const virtualStore = (p) => (/^[a-z]:\\program files/i.test(p) && process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'VirtualStore', p.slice(3)) : null);
+// The game writes its log all the time while it runs: one that hasn't
+// changed for 2 minutes then isn't the one it writes (reports 357, 365: a
+// log left from another install, or Unreal's UE_game_2.log when the first
+// was held open).
+let logLookedAt = 0;
+const STALE_MS = 120000;
+function logStale() {
+  if (!game.running || !logPath || Date.now() - gameSince < STALE_MS) return false;
+  const st = statOf(logPath);
+  return !st || Date.now() - st.mtimeMs > STALE_MS;
+}
+// The newest UE_game*.log in these folders, and when it last changed.
+function newestLog(dirs) {
+  let best = null;
+  for (const dir of dirs) {
+    let names = [];
+    try {
+      names = fs.readdirSync(dir).filter((n) => /^UE_game(_\d+)?\.log$/i.test(n));
+    } catch (e) {
+      continue;
+    }
+    for (const n of names) {
+      const p = path.join(dir, n);
+      const st = statOf(p);
+      if (st && st.isFile() && (!best || st.mtimeMs > best.st.mtimeMs)) best = { p, st };
+    }
+  }
+  return best;
+}
+// The Logs folders beside the running game (and their VirtualStore copies).
+function besideGame() {
+  const program = game.running && game.hwnd && win32 ? win32.programOf(game.hwnd) : null;
+  if (!program || !/torchlight/i.test(program)) return [];
+  const own = path.resolve(path.dirname(program), '..', '..', 'TorchLight', 'Saved', 'Logs');
+  return [own, virtualStore(own)].filter(Boolean);
+}
 async function findLog() {
   if (LOG_OVERRIDE) {
     logFoundBy = 'given';
     return path.resolve(LOG_OVERRIDE);
   }
   if (settings.logPath && statOf(path.dirname(settings.logPath))) {
+    // A hand-picked log, unless the game stopped writing it and writes
+    // another, beside it or beside the running game.
+    const chosen = statOf(settings.logPath);
+    const idle = game.running && Date.now() - gameSince > STALE_MS && (!chosen || Date.now() - chosen.mtimeMs > STALE_MS);
+    const other = idle ? newestLog([path.dirname(settings.logPath), ...besideGame()]) : null;
+    if (other && path.resolve(other.p) !== path.resolve(settings.logPath) && Date.now() - other.st.mtimeMs < STALE_MS) {
+      logFoundBy = 'being written (the chosen one isn’t)';
+      return other.p;
+    }
     logFoundBy = 'chosen by the player';
     return settings.logPath;
   }
-  const program = game.running && game.hwnd && win32 ? win32.programOf(game.hwnd) : null;
-  if (program && /torchlight/i.test(program)) {
-    const own = path.resolve(path.dirname(program), '..', '..', 'TorchLight', 'Saved', 'Logs', 'UE_game.log');
-    const found = [own, virtualStore(own)].filter(Boolean).map((p) => ({ p, st: statOf(p) })).filter((x) => x.st && x.st.isFile()).sort((a, b) => b.st.mtimeMs - a.st.mtimeMs);
-    if (found.length) {
-      logFoundBy = 'beside the running game';
-      return found[0].p;
-    }
+  const own = newestLog(besideGame());
+  if (own) {
+    logFoundBy = 'beside the running game';
+    return own.p;
   }
   logFoundBy = 'in the game folders';
   const roots = new Map();
@@ -285,6 +333,7 @@ async function pickLog() {
 // What a browser can't see: which program a window is. The game window is
 // found by its title, every few seconds.
 let game = { running: false, title: '', hwnd: 0 };
+let gameSince = 0; // when the game was last found running
 // The game counts as closed only after its window has been missing for
 // three looks in a row: a failed look, or a moment between two windows
 // (loading screens), doesn't hide the overlay or end the share.
@@ -313,7 +362,18 @@ async function lookForGame() {
     return;
   }
   const was = game.running;
+  const wasHwnd = game.hwnd;
   game = { running: !!source, title: source ? source.title.trim() : '', hwnd: source ? source.hwnd : 0, admin: game.admin };
+  if (was && game.running && wasHwnd && game.hwnd !== wasHwnd) {
+    note(`game window changed (window ${win32 ? win32.stateOf(game.hwnd) : 'state unknown'})`);
+    pushGame();
+  }
+  if (!was && game.running) gameSince = Date.now();
+  // A log the game stopped writing gives way to one it's writing.
+  if (game.running && Date.now() - logLookedAt > 30000) {
+    logLookedAt = Date.now();
+    if (logStale()) refreshLog();
+  }
   if (game.running !== was) {
     // Whether the game runs as administrator (see adminText): Windows cuts
     // off at once a window share from an app that doesn't.
@@ -444,15 +504,22 @@ const win32 = (() => {
           windowPid(h, pid);
           return pid[0] === process.pid ? null : { title, hwnd: h };
         };
-        if (known) {
+        // The largest that fits: a launcher can share the game's title
+        // (reports 371, 372, 379), and the game's own window is the big one.
+        // A minimized one keeps its place.
+        if (known && iconic(known)) {
           const again = fits(known);
           if (again) return again;
         }
+        let best = null;
         for (let h = Number(nextWindow(0, 0, null, null)); h; h = Number(nextWindow(0, h, null, null))) {
           const found = fits(h);
-          if (found) return found;
+          if (!found) continue;
+          const r = {};
+          const area = rect(h, r) ? (r.right - r.left) * (r.bottom - r.top) : 0;
+          if (!best || area > best.area || (area === best.area && h === known)) best = { title: found.title, hwnd: h, area };
         }
-        return null;
+        return best ? { title: best.title, hwnd: best.hwnd } : null;
       },
       // Where the program behind a window is: only its file's name
       // (PROCESS_QUERY_LIMITED_INFORMATION reads nothing else of it).
@@ -471,11 +538,34 @@ const win32 = (() => {
         }
       },
       foreground: () => Number(foreground()),
+      // The process a window belongs to.
+      pidOf(hwnd) {
+        const pid = [0];
+        windowPid(hwnd, pid);
+        return pid[0];
+      },
       rect(hwnd) {
         const r = {};
         return rect(hwnd, r) ? { x: r.left, y: r.top, width: r.right - r.left, height: r.bottom - r.top } : null;
       },
       minimized: (hwnd) => !!iconic(hwnd),
+      // A window's visible frame, in screen pixels: GetWindowRect adds the
+      // invisible resize borders, where what's behind the window shows
+      // (DWMWA_EXTENDED_FRAME_BOUNDS).
+      frame(hwnd) {
+        if (dwmAttr) {
+          const b = Buffer.alloc(16);
+          if (dwmAttr(hwnd, 9, b, 16) === 0) {
+            const x = b.readInt32LE(0);
+            const y = b.readInt32LE(4);
+            const width = b.readInt32LE(8) - x;
+            const height = b.readInt32LE(12) - y;
+            if (width > 0 && height > 0) return { x, y, width, height };
+          }
+        }
+        const r = {};
+        return rect(hwnd, r) ? { x: r.left, y: r.top, width: r.right - r.left, height: r.bottom - r.top } : null;
+      },
     };
   } catch (e) {
     return null;
@@ -1024,7 +1114,7 @@ const sender = (e, name) => !!wins[name] && !wins[name].isDestroyed() && e.sende
 const fromPage = (e, name) => sender(e, name) && !!e.senderFrame && pageOf(e.senderFrame.url) === PAGES[name];
 
 function gameInfo() {
-  return { running: game.running, title: game.title, adminBlock: game.running && adminBlocks(game.admin), log: logPath ? { path: logPath, name: path.basename(logPath), there: !!statOf(logPath) } : null };
+  return { running: game.running, title: game.title, window: game.hwnd || 0, adminBlock: game.running && adminBlocks(game.admin), log: logPath ? { path: logPath, name: path.basename(logPath), there: !!statOf(logPath) } : null };
 }
 function pushGame() {
   const g = gameInfo();
@@ -1046,6 +1136,7 @@ function pushShell(patch) {
     siteUpdate,
     appUpdate,
     hotkeys: HOTKEYS,
+    screenShare: settings.screenShare ? settings.screenShare.on : null,
     local: /^(localhost|127\.0\.0\.1)$/.test(SITE_URL.hostname),
     version: app.getVersion(),
   }, shellExtra));
@@ -1074,6 +1165,8 @@ ipcMain.on('consent:set', (e, value) => {
     : value && Number.isInteger(value.version) && value.version > 0 ? { version: value.version, at } : null;
   if (JSON.stringify(next) === JSON.stringify(settings.consent)) return;
   settings.consent = next;
+  // The screen fallback was allowed under this agreement: it goes with it.
+  if (!next || next.withdrawn) settings.screenShare = null;
   saveSettings();
   note(!next ? 'agreement cleared' : next.withdrawn ? 'agreement withdrawn: off for the app' : `agreement remembered for the app (version ${next.version})`);
 });
@@ -1237,6 +1330,45 @@ setInterval(async () => {
 // doesn't work: it opens the analyzer's Report form, filled in, and is also
 // copied to the clipboard. Paths under the player's own folder are shortened
 // to %USERPROFILE%. It holds no picture and no game log line.
+// What the game log holds, for finding why no trigger matches (the
+// standalone client, reports 345, 346, 361 and 362): its text encoding,
+// and in its last 4 MB how many lines name the prison's season (S16) and
+// which season tags appear (S16, S17...), as counts. No line of the log is
+// kept or reported (the user, 2026-10-18).
+function logCheck() {
+  if (!logPath) return 'no log';
+  let fd;
+  try {
+    fd = fs.openSync(logPath, 'r');
+    const size = fs.fstatSync(fd).size;
+    const head = Buffer.alloc(Math.min(size, 3));
+    fs.readSync(fd, head, 0, head.length, 0);
+    let n = Math.min(size, 4 * 1024 * 1024);
+    let buf = Buffer.alloc(n);
+    fs.readSync(fd, buf, 0, n, size - n);
+    let nul = 0;
+    for (let i = 0; i < Math.min(n, 65536); i++) if (buf[i] === 0) nul += 1;
+    const utf16 = (head[0] === 0xff && head[1] === 0xfe) || nul > Math.min(n, 65536) / 5;
+    // UTF-16 starts each character on an even byte.
+    if (utf16 && (size - n) % 2) buf = buf.subarray(1);
+    const text = buf.toString(utf16 ? 'utf16le' : 'utf8');
+    const lines = text.split('\n');
+    const s16 = lines.filter((l) => l.includes('S16')).length;
+    const tags = {};
+    for (const m of text.matchAll(/(?<![A-Za-z0-9])S(\d{1,2})(?=[A-Z][a-z])|_S(\d{1,2})_/g)) {
+      const k = `S${m[1] || m[2]}`;
+      tags[k] = (tags[k] || 0) + 1;
+    }
+    const top = Object.entries(tags).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k, v]) => `${k} ×${v}`).join(', ') || 'none';
+    const kind = utf16 ? 'UTF-16' : head[0] === 0xef && head[1] === 0xbb ? 'UTF-8 (BOM)' : 'UTF-8';
+    return `${kind}; last ${(n / 1048576).toFixed(1)} MB: ${lines.length} lines, ${s16} with "S16"; season tags: ${top}`;
+  } catch (e) {
+    return `can't be read (${e.code || e.message})`;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
 function debugReportText(cores) {
   const home = require('os').homedir();
   const clean = (t) => String(t || '').split(home).join('%USERPROFILE%');
@@ -1247,8 +1379,9 @@ function debugReportText(cores) {
   const lines = [
     `Tartarus Overlay ${app.getVersion()}${BIG_RECORD ? ' (debug)' : ''}, site ${SITE}, Windows ${require('os').release()}`,
     `Game: ${game.running ? `running (${game.title}); ${adminText(game.admin)}` : 'not running'}; log file (${logFoundBy}): ${clean(logPath) || 'not found'}`,
-    `Agreed: ${agreed}; log: ${f.log}${f.error ? ` (${clean(f.error)})` : ''}; window: ${f.window}${f.windowSize ? ` ${f.windowSize}` : ''}; game log detail (Enable Log): ${f.detail || 'not known yet'}`,
+    `Agreed: ${agreed}; log: ${f.log}${f.error ? ` (${clean(f.error)})` : ''}; window: ${f.window}${f.windowSize ? ` ${f.windowSize}` : ''}${f.shared === 'screen' ? ' (the game’s screen, cut to the game window)' : ''}; screen fallback: ${settings.screenShare ? (settings.screenShare.on ? 'allowed' : 'declined') : 'not asked'}; game log detail (Enable Log): ${f.detail || 'not known yet'}`,
     `Log file: ${d.logSize || '?'} bytes, last grew ${ago(d.growingAt)}. Since connecting: ${f.lines || 0} lines read, ${f.hits || 0} triggers ${JSON.stringify(d.triggers || {})}, ${f.frames || 0} pictures, ${d.failed || 0} failed.`,
+    `Log check: ${logCheck()}`,
     `Last window share error: ${d.shareError ? `${clean(d.shareError)} (${ago(d.shareErrorAt)})` : 'none'}`,
     `Last trigger: ${d.lastTriggerKind || 'none'} ${ago(d.lastTriggerAt)}. Last picture: ${f.lastFrame ? `${f.lastFrame.kind} ${ago(f.lastFrame.at)}${f.lastFrame.ok ? '' : ` (none taken: ${f.lastFrame.why})`}` : 'none'}; on the page: ${d.lastNote || '-'}`,
     `Analyzer: ${a.lastRead ? `last read ${ago(a.lastRead.at)}, ${a.lastRead.ok ? 'ok' : `failed: ${a.lastRead.reason}`}` : 'nothing read'}; advice: ${a.move || (a.working ? 'working' : 'none')}`,
@@ -1317,7 +1450,10 @@ function command(cmd) {
   switch (cmd) {
     case 'board': return toggle('analyzer');
     case 'follow': return show('follow');
-    case 'capture': return send('follow', 'command', 'capture');
+    case 'capture':
+      // Auto Screenshot Mode is off: its page, to turn it on (report 380).
+      if (agreed === false) return show('follow');
+      return send('follow', 'command', 'capture');
     case 'fix':
       show('analyzer');
       return send('analyzer', 'command', 'fix');
@@ -1346,6 +1482,9 @@ function command(cmd) {
       return pushShell();
     case 'review': return showReview();
     case 'pick-log': return pickLog();
+    case 'screen-yes':
+    case 'screen-no':
+      return setScreenShare(cmd === 'screen-yes');
     case 'reload': return reloadSite();
     case 'restart': return updater && updater.quitAndInstall();
     default: return undefined;
@@ -1354,8 +1493,49 @@ function command(cmd) {
 
 // #region share-game
 // Only follow.html may share a window, and the only window it gets is the
-// game's, found by its title. A whole screen or another window never is.
+// game's, found by its title. Another window never is. A whole screen is
+// shared only when Windows won't share the game window and the player said
+// yes to it in the overlay: then it's the screen the game is on, and
+// js/capture.js cuts every picture to the game window (gameCrop below)
+// and takes none while another window is in front.
 let testUnlisted = false; // --test: as if the capture's list left the game out
+let testShareFail = false; // --test: as if Windows wouldn't share the game window
+let screenNext = false; // follow.html asked for the screen on its next share
+const screenAllowed = () => !!(settings.screenShare && settings.screenShare.on === true && agreed);
+function setScreenShare(on) {
+  settings.screenShare = { on: !!on, at: new Date().toISOString() };
+  saveSettings();
+  note(on ? 'screen share allowed: the screen the game is on, cut to the game window, when Windows won’t share the window' : 'screen share declined');
+  pushShell();
+  rebuildMenu();
+  send('follow', 'command', 'share-again');
+}
+// The screen the game window is on (most of it), and both in screen pixels.
+function gameScreen() {
+  const r = game.running && game.hwnd && win32 ? win32.frame(game.hwnd) : null;
+  if (!r) return null;
+  const display = screen.getDisplayMatching(screen.screenToDipRect(null, r));
+  return { r, display, s: screen.dipToScreenRect(null, display.bounds) };
+}
+// Where the game window is on its screen, and whether it's in front: the
+// crop for every picture of a shared screen (follow.html only).
+ipcMain.handle('game:crop', (e) => {
+  if (!fromPage(e, 'follow') || !screenAllowed()) return null;
+  const g = gameScreen();
+  if (!g) return null;
+  // In front: the game's window, another of the game's own windows, or one
+  // of this app's that doesn't cover the game (report 362: the picture was
+  // asked for from the app).
+  const fg = win32.foreground();
+  const own = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed() && w.isVisible()).some((w) => Number(w.getNativeWindowHandle().readBigUInt64LE(0)) === fg);
+  const covers = (a, b) => !!a && a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+  const front = !win32.minimized(game.hwnd) && (fg === game.hwnd || win32.pidOf(fg) === win32.pidOf(game.hwnd) || (own && !covers(win32.frame(fg), g.r)));
+  return { x: g.r.x - g.s.x, y: g.r.y - g.s.y, width: g.r.width, height: g.r.height, screenWidth: g.s.width, screenHeight: g.s.height, front };
+});
+ipcMain.handle('share:screen-ok', (e) => (fromPage(e, 'follow') ? { allowed: screenAllowed(), asked: !!settings.screenShare } : null));
+ipcMain.on('share:screen', (e, on) => {
+  if (fromPage(e, 'follow')) screenNext = !!on && screenAllowed();
+});
 function allowCapture() {
   session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
     const wc = wins.follow && !wins.follow.isDestroyed() ? wins.follow.webContents : null;
@@ -1365,9 +1545,33 @@ function allowCapture() {
       note('window share refused: not asked by follow.html');
       return callback({});
     }
+    const wantScreen = screenNext && screenAllowed();
+    screenNext = false;
+    if (wantScreen) {
+      desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } })
+        .then((sources) => {
+          const g = gameScreen();
+          const s = g ? sources.find((x) => String(x.display_id) === String(g.display.id)) : null;
+          note(s ? `screen share: the screen the game is on (${g.s.width}×${g.s.height}), every picture cut to the game window` : 'screen share refused: the game’s screen wasn’t found');
+          callback(s ? { video: s } : {});
+        })
+        .catch((e) => {
+          note('screen share failed:', String((e && e.message) || e));
+          callback({});
+        });
+      return undefined;
+    }
+    if (testShareFail && game.running) {
+      // A window Windows won't hand over (the test's stand-in for "Could
+      // not start video source").
+      note('window share: (test) a window that won’t start');
+      return callback({ video: { id: 'window:1:0', name: game.title } });
+    }
     desktopCapturer.getSources({ types: ['window'], thumbnailSize: { width: 0, height: 0 }, fetchWindowIcons: false })
       .then((sources) => {
-        let s = testUnlisted ? null : sources.find((x) => GAME_TITLE.test(x.name));
+        // The game's window by its handle, then by its title (a launcher
+        // can share the title, reports 371 and 372).
+        let s = testUnlisted ? null : sources.find((x) => game.hwnd && x.id.startsWith(`window:${game.hwnd}:`)) || sources.find((x) => GAME_TITLE.test(x.name));
         if (s) note(`window share: "${s.name.trim()}"`);
         else if (game.running && game.hwnd) {
           // Windows has the game's window, but the capture's list left it out
@@ -1473,6 +1677,7 @@ function rebuildMenu() {
     { type: 'separator' },
     { label: 'Show the overlay', type: 'checkbox', checked: settings.overlayOn, accelerator: HOTKEYS.overlay, click: (i) => setOverlayOn(i.checked) },
     { label: 'Hide it while another window is in front', type: 'checkbox', checked: settings.hideBehind, enabled: !!win32, click: (i) => { settings.hideBehind = i.checked; saveSettings(); updateOverlay(); } },
+    { label: 'Share the game’s screen when Windows won’t share its window', type: 'checkbox', checked: screenAllowed(), enabled: agreed && !!win32, click: (i) => setScreenShare(i.checked) },
     { label: 'Hide it from screenshots and streams', type: 'checkbox', checked: settings.hideFromCaptures, click: (i) => { settings.hideFromCaptures = i.checked; saveSettings(); if (wins.overlay) wins.overlay.setContentProtection(i.checked); } },
     { label: 'Put the overlay back in the corner', click: () => { settings.overlay = null; overlayPlaced = false; saveSettings(); placeOverlay(); } },
     { type: 'separator' },
@@ -1582,6 +1787,8 @@ if (!app.requestSingleInstanceLock()) {
       }
       // "unlisted": the capture's list leaves the game window out.
       if (/unlisted/.test(text)) testUnlisted = true;
+      // "share-fail": Windows won't share the game window.
+      if (/share-fail/.test(text)) testShareFail = true;
       // "cpu one": as the tray's Processor use does.
       const cpu = /cpu (\w+)/.exec(text);
       if (cpu) setCpu(cpu[1]);

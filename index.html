@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600;700&family=Big+Shoulders+Stencil+Display:wght@600;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="css/style.css?v=20261017h">
+<link rel="stylesheet" href="css/style.css?v=20261018m">
 </head>
 <body>
 <div class="app" id="app">
@@ -23,7 +23,7 @@
       <div class="title-actions">
         <a class="route route-featured" href="analyze.html">
           <span class="route-name">Board analyzer</span>
-          <span class="route-text">Playing live? Enter your board exactly as it is, with your tools and contracts, and get the best move for that position.</span>
+          <span class="route-text">Playing live? Enter your board exactly as it is, with your tools, and get the best move for that position.</span>
           <span class="route-meta">Your position · move advice</span>
         </a>
         <button type="button" class="btn btn-primary btn-continue" id="btn-continue" hidden>
@@ -33,11 +33,6 @@
           <span class="route-name">Rules drill</span>
           <span class="route-text">Start from an empty prison: day 1, all 15 cells sealed. Best for a first run.</span>
           <span class="route-meta">20 days · practice values</span>
-        </button>
-        <button type="button" class="route" data-route="challenge">
-          <span class="route-name">Contract challenge</span>
-          <span class="route-text">Start with 6 or 3 inmates and a tool. Fill three escort contracts on a shared voucher budget.</span>
-          <span class="route-meta">12 days · fixed rules · scored</span>
         </button>
         <button type="button" class="route" data-route="markers">
           <span class="route-name">Focused drills</span>
@@ -129,7 +124,6 @@
       <div class="actionbar">
         <button type="button" class="btn" id="btn-swap">Replace</button>
         <button type="button" class="btn" id="btn-hunt" hidden>Hunt</button>
-        <button type="button" class="btn" id="btn-deliver" hidden>Deliver</button>
         <button type="button" class="btn" id="btn-undo">Undo</button>
         <button type="button" class="btn btn-primary" id="btn-end">End day</button>
       </div>
@@ -157,12 +151,6 @@
           <p class="panel-note" id="solver-note"></p>
         </div>
         <ol class="tips" id="advisor-list" hidden></ol>
-      </section>
-
-      <section class="panel" id="panel-contracts" hidden>
-        <h2 class="panel-title">Contracts</h2>
-        <div class="contracts" id="contract-list"></div>
-        <p class="panel-note">Each contract is delivered at the end of its due day. Light escort: 1 voucher, pressure up to 36. Heavy escort: 3 vouchers, up to 72. Pressure per inmate: Normal 2, Magic 4, Rare 8, Legendary 16, Supreme 32, Rainbow 65.</p>
       </section>
 
       <section class="panel" id="panel-vault">
@@ -198,7 +186,7 @@
             <circle cx="50" cy="148" r="20"></circle><text x="50" y="156">R</text><text class="chain-name" x="50" y="190">Rat</text>
           </g>
         </svg>
-        <p class="panel-note" id="chain-note">Each beast has one meal, and from Legendary up Mammoths also eat Wolves and Lions also eat Rats. Arrows point from eater to meal. Both must share a rarity. A consume raises the eater one tier, then re-rolls its beast.</p>
+        <p class="panel-note" id="chain-note">Mammoths eat Lions and Wolves, Lions eat Wolves and Rats, Wolves eat Rats, and Rats eat Mammoths. Arrows point from eater to meal. Both must share a rarity. A consume raises the eater one tier, then re-rolls its beast.</p>
         <ol class="ladder" aria-label="Rarity ladder">
           <li class="t0">Normal</li><li class="t1">Magic</li><li class="t2">Rare</li><li class="t3">Legendary</li><li class="t4">Supreme</li><li class="t5">Rainbow</li>
         </ol>
@@ -217,21 +205,9 @@
       <button type="button" class="x" data-close aria-label="Close">×</button>
     </header>
     <div class="sheet-body">
-      <fieldset class="field">
-        <legend>Mode</legend>
-        <div class="segmented">
-          <label><input type="radio" name="mode" value="drill" id="new-mode-drill" checked><span>Rules drill</span></label>
-          <label><input type="radio" name="mode" value="challenge" id="new-mode-challenge"><span>Contract challenge</span></label>
-        </div>
-      </fieldset>
       <fieldset class="field" id="new-scenarios">
         <legend>Starting scene</legend>
         <div class="options" id="scenario-options"></div>
-      </fieldset>
-      <fieldset class="field" id="new-loadouts" hidden>
-        <legend>Starting kit</legend>
-        <div class="options" id="loadout-options"></div>
-        <p class="field-note">12 days and 6 dispatch vouchers. Three contracts fall due at the end of days 4, 8 and 12. Each of your first two deliveries earns a refit. Escorts and refit refreshes share the vouchers. Pass by delivering at least two contracts, including the heavy one.</p>
       </fieldset>
       <div class="field">
         <label class="field-label" for="new-seed">Seed</label>
@@ -263,8 +239,8 @@
       <a class="menu-item" href="strategy.html"><strong>Strategy guide</strong><span>A rough strategy from over 25 million simulated runs</span></a>
       <button type="button" class="menu-item" data-open="dlg-run"><strong>Run &amp; saves</strong><span>Inmates, undo, export and import</span></button>
       <button type="button" class="menu-item" data-open="dlg-prefs"><strong>Preferences</strong><span>Trainer, quick decisions, motion and sound</span></button>
-      <button type="button" class="menu-item" data-open="dlg-lab"><strong>Lab</strong><span>Scene editor and practice values (drills only)</span></button>
-      <button type="button" class="menu-item" id="btn-menu-new"><strong>New run</strong><span>Pick a mode, scene or kit and a seed</span></button>
+      <button type="button" class="menu-item" data-open="dlg-lab"><strong>Lab</strong><span>Scene editor and practice values</span></button>
+      <button type="button" class="menu-item" id="btn-menu-new"><strong>New run</strong><span>Pick a starting scene and a seed</span></button>
       <button type="button" class="menu-item" data-open="dlg-about"><strong>About</strong><span>Credits and disclaimer</span></button>
     </nav>
     <footer class="sheet-foot">
@@ -296,7 +272,7 @@
       <p>When an inmate is consumed or sent off, its cell seals again. The next time that door opens, someone new is inside.</p>
 
       <h3>The food chain</h3>
-      <p>Each beast has one meal, and both sides must share a rarity: Mammoth eats Lion, Lion eats Wolf, Wolf eats Rat, and Rat eats Mammoth. From Legendary up, Mammoths also eat Wolves and Lions also eat Rats, as live screenshots show. No beast eats its own kind unless you hold the Skewered Rat Heads, which lets Rats eat Rats. (The Chinese sim gave Mammoths and Lions their second meal at every rarity; the live game does only from Legendary up.)</p>
+      <p>Both sides must share a rarity: Mammoth eats Lion, Lion eats Wolf, Wolf eats Rat, and Rat eats Mammoth, and Mammoths also eat Wolves and Lions also eat Rats, as players' games show. No beast eats its own kind unless you hold the Skewered Rat Heads, which lets Rats eat Rats.</p>
 
       <h3>Rarity</h3>
       <p>Normal, Magic, Rare, Legendary, Supreme, Rainbow. A consume raises the eater one tier, then re-rolls its beast, so check its new matchups before the next meal. An inmate that reaches Rainbow leaves its cell for the vault and opens the Warden's Treasure. You can keep raising more Rainbows for the rest of the run.</p>
@@ -318,6 +294,8 @@
         <dd>The next 4 locked cells clockwise from the warden show the rarity of the inmate inside. Their beasts stay hidden until the doors open.</dd>
         <dt class="m-event">Taste of Freedom</dt>
         <dd>3 random locked cells open. They trigger no other effects.</dd>
+        <dt class="m-event">Extra Portion</dt>
+        <dd>Up to 3 random inmates rise a tier (all of them, with fewer on the block).</dd>
         <dt class="m-event">Usurpation I</dt>
         <dd>1 random inmate rises a tier. Usurpation I then leaves the special events and Usurpation II joins them, and one appears behind a random locked door at once.</dd>
         <dt class="m-event">Usurpation II</dt>
@@ -340,27 +318,22 @@
       </dl>
 
       <h3>Objectives, tools and the Warden's Treasure</h3>
-      <p>Every drill starts with a pick of three random tools, as the live game does: take one, and it lasts for the whole run. Each run also draws a random objective, shown with the run's goal: <strong>King of the Caged</strong> (at least 1 inmate's rarity reaches Supreme) or <strong>Prison Walk</strong> (move 18 tiles: every cell the warden walks counts). Meeting it earns a tool: pick one of three, and it lasts for the rest of the run. So a Supreme earns a tool only in runs whose objective is King of the Caged. The live game has more objectives, and what they pay isn't known yet, so every objective here pays a tool. In the contract challenge, the starting kit takes the place of the starting pick.</p>
+      <p>Every drill starts with a pick of three random tools, as the live game does: take one, and it lasts for the whole run. Each run also draws a random objective, shown with the run's goal: <strong>King of the Caged</strong> (at least 1 inmate's rarity reaches Supreme) or <strong>Prison Walk</strong> (move 18 tiles: every cell the warden walks counts). Meeting it earns a tool: pick one of three, and it lasts for the rest of the run. So a Supreme earns a tool only in runs whose objective is King of the Caged. The live game has more objectives, and what they pay isn't known yet, so every objective here pays a tool.</p>
       <p>Each Rainbow that reaches the vault opens the Warden's Treasure: pick one gift, which takes effect at once. In the Lab you can change how many tools a drill starts with, or switch rewards off for pure rules practice.</p>
       <dl class="defs" id="hb-tools"></dl>
 
-      <h3>Contract challenge</h3>
-      <p>Twelve days with 6 dispatch vouchers and a starting kit: a few inmates already on the block, plus one or two tools. Vouchers pay for escorts and refit refreshes.</p>
-      <p>Three contracts fall due at the end of days 4, 8 and 12. Ending a due day opens the delivery window: pick inmates (vault Rainbows count) that meet the contract, choose an escort, and send them, or skip the contract. A light escort costs 1 voucher and carries up to 36 pressure; a heavy escort costs 3 and carries up to 72. Each inmate scores 2 to the power of its tier. Each of your first two deliveries earns a refit tool; you may refresh the offer once for 1 voucher. From day 9, once the first two contracts are settled, you can deliver the heavy contract early, which ends the run. You pass by delivering at least two contracts, including the heavy one.</p>
       <h3>The trainer</h3>
-      <p>Press <strong>Trainer</strong> at the top to show it beside the block while you play. It works in every situation: patrols, events, consumes, Replaces, tools, gifts, and the contract challenge's deliveries.</p>
+      <p>Press <strong>Trainer</strong> at the top to show it beside the block while you play. It works in every situation: patrols, events, consumes, Replaces, tools and gifts.</p>
       <ul>
         <li><strong>Recommended.</strong> The trained strategy's pick appears at once, with its reason and the lesson training found for that kind of decision. The recommended cell or button is marked on the board.</li>
-        <li><strong>Live check.</strong> Every option you have right now is played out hundreds of times from the current position. Everything you can't see is re-rolled each time, so it never peeks behind a door, and the trained strategy makes every later choice. Options are ranked by Rainbows vaulted by the end of the run. In the challenge they're ranked by the chance to pass first, then by contract points. Each option is compared with the best on the same dice, and once the check finds a clearly better move, that becomes the recommendation. Consume options also show their exact chain odds.</li>
-        <li><strong>Convoys.</strong> When a delivery window opens, the trainer shows its convoy inside the window and stars the inmates to send. It compares every convoy it would consider: its own pick, the most points, the most points by light escort, the cheapest cargo, and skipping. It checks the convoy you're loading too, so you can see what a different cargo would cost before you send it.</li>
+        <li><strong>Live check.</strong> Every option you have right now is played out hundreds of times from the current position. Everything you can't see is re-rolled each time, so it never peeks behind a door, and the trained strategy makes every later choice. Options are ranked by Rainbows vaulted by the end of the run. Each option is compared with the best on the same dice, and once the check finds a clearly better move, that becomes the recommendation. Consume options also show their exact chain odds.</li>
         <li><strong>Grades.</strong> Each move you make is graded against the live check of the position before it: the best move, close to the best (within the margin of error), or what it cost. The panel keeps a tally for the run.</li>
       </ul>
-      <p>For the big picture before you play, read the <a href="strategy.html">strategy guide</a>. To get advice on your own board in the live game, open the <a href="analyze.html">board analyzer</a>: set every cell, your tools and contracts, and it recommends the move the same way the trainer does.</p>
-      <p>There's no AI involved: the strategy is a set of scoring rules whose weights were tuned over millions of simulated runs. Its main lessons: consume whenever you can (unless it would break a prey mark, which gives free tiers every morning), replace a low-tier inmate in the warden's cell (Normal and Magic; Rare too when you have tools) when no consume there is worth more, since a day has one or the other, accept Chain reactions, Behind Closed Doors, Ravenous Appetite, High-Risk Convict, Crow Whispers, Taste of Freedom and the Usurpations, accept an Execution when it gains more than it removes, and keep opening doors. Each beast waiting at a tier covers one of the four beasts a chain's eater can re-roll into, so a tier with all four keeps any chain going. Held from day 1, the best instruments were the Severed Iron Maiden, the Executioner's Blacklist and the Long-Chained Shackles, and the Maiden with Hangman's Noose turns most Replaces into Rainbows. The Squirming Iron Box hurt the most, then the Forged Key, and the Iron Pestle, Lost Ring of Keys and Short-Chained Shackles came out level with no instrument.</p>
-      <p>In the contract challenge, the strategy sends inmates it can spare by light escort on the first two contracts, keeps 3 vouchers for the heavy contract, and gets the block ready for each contract in the last days before its deadline. Sending the most points every time passes far less often.</p>
+      <p>For the big picture before you play, read the <a href="strategy.html">strategy guide</a>. To get advice on your own board in the live game, open the <a href="analyze.html">board analyzer</a>: set every cell and your tools, and it recommends the move the same way the trainer does.</p>
+      <p>There's no AI involved: the strategy is a set of scoring rules whose weights were tuned over millions of simulated runs. Its main lessons: consume whenever you can (unless it would break a prey mark, which gives free tiers every morning), replace a low-tier inmate in the warden's cell (Normal and Magic; Rare too when you have tools) when no consume there is worth more, since a day has one or the other, accept Chain reactions, Behind Closed Doors, Ravenous Appetite, High-Risk Convict, Crow Whispers, Taste of Freedom and the Usurpations, accept an Execution when it gains more than it removes, and keep opening doors. A Wolf or a Rat waiting at a tier feeds two of the four beasts a chain's eater can re-roll into, a Lion or a Mammoth one, and a Mammoth, a Rat and a Lion or a Wolf together keep any chain going. Held from day 1, the best instruments were the Elephant-Foot Maul, the Blood-Stained Trap and the Iron Crown of the Prison King, and the Severed Iron Maiden with Hangman's Noose turns most Replaces into Rainbows. The Squirming Iron Box hurt the most, then the Forged Key and the Gaoler's Execution Axe, and the Iron Pestle, the Searing Branding Iron and the Short-Chained Shackles came out level with no instrument.</p>
 
       <h3>Practice values</h3>
-      <p>The live game's exact odds, daily limits and some timing details are not public. This simulator uses stated practice values for them. You can change the drill values in the Lab; the contract challenge always uses fixed values. Riots, followers, loot and combat are not simulated.</p>
+      <p>The live game's exact odds, daily limits and some timing details are not public. This simulator uses stated practice values for them. You can change the drill values in the Lab. Riots, followers, loot and combat are not simulated.</p>
     </div>
     <footer class="sheet-foot">
       <button type="button" class="btn btn-primary" data-close>Close</button>
@@ -511,6 +484,7 @@
                 <option value="usurp1">Usurpation I</option>
                 <option value="usurp2">Usurpation II</option>
                 <option value="hunt">"Treasure" Hunt</option>
+                <option value="portion">Extra Portion</option>
               </select>
             </div>
             </div>
@@ -537,7 +511,7 @@
         <p class="field-note">Edits change the current drill right away and can be undone.</p>
       </div>
       <div id="lab-params" role="tabpanel" aria-labelledby="tab-params" hidden>
-        <p class="field-note">These values apply to new drills. The contract challenge always uses fixed values.</p>
+        <p class="field-note">These values apply to new drills.</p>
         <form id="form-params" class="params"></form>
       </div>
     </div>
@@ -549,7 +523,7 @@
   </div>
 </dialog>
 
-<!-- Choice: objective tool, Warden's Treasure gift or refit -->
+<!-- Choice: starting instrument, objective tool or Warden's Treasure gift -->
 <dialog class="sheet" id="dlg-choice" aria-labelledby="choice-title">
   <div class="sheet-inner">
     <header class="sheet-head">
@@ -560,48 +534,6 @@
       <p class="field-note" id="choice-note"></p>
       <div class="refit" id="choice-options"></div>
     </div>
-    <footer class="sheet-foot">
-      <button type="button" class="btn" id="btn-choice-refresh" hidden>Refresh offer · 1 voucher</button>
-    </footer>
-  </div>
-</dialog>
-
-<!-- Delivery window -->
-<dialog class="sheet sheet-wide" id="dlg-deliver" aria-labelledby="deliver-title">
-  <div class="sheet-inner">
-    <header class="sheet-head">
-      <div><p class="eyebrow" id="deliver-eyebrow">Delivery window</p><h2 id="deliver-title">Prepare a delivery</h2></div>
-      <button type="button" class="x" data-close aria-label="Close">×</button>
-    </header>
-    <div class="sheet-body">
-      <div class="contract contract-active" id="deliver-contract"></div>
-      <section class="trainer-pick deliver-trainer" id="deliver-trainer" aria-live="polite" hidden>
-        <div class="trainer-body" id="deliver-trainer-head"></div>
-        <div class="trainer-play"><button type="button" class="btn btn-primary" id="btn-deliver-trainer">Load the trainer’s pick</button></div>
-        <div class="trainer-body" id="deliver-trainer-body"></div>
-        <ol class="dopts" id="deliver-options"></ol>
-        <p class="trainer-lesson" id="deliver-options-note" hidden>Each convoy is played out to the end of the run many times, with the trained strategy making every later choice. Ranked by the chance to pass, then by contract points. ★ marks the trainer’s pick, here and in the list below.</p>
-      </section>
-      <p class="deliver-trainer-off" id="deliver-trainer-off" hidden>Not sure what to send? <button type="button" class="link-btn" id="btn-deliver-trainer-on">Turn on the Trainer</button> to see which convoy passes most often.</p>
-      <fieldset class="field">
-        <legend>Inmates to send</legend>
-        <div class="pick-list" id="deliver-inmates"></div>
-      </fieldset>
-      <fieldset class="field">
-        <legend>Escort</legend>
-        <div class="segmented">
-          <label><input type="radio" name="escort" value="light" id="escort-light" checked><span>Light · 1 voucher · up to 36</span></label>
-          <label><input type="radio" name="escort" value="heavy" id="escort-heavy"><span>Heavy · 3 vouchers · up to 72</span></label>
-        </div>
-      </fieldset>
-      <p class="deliver-status" id="deliver-status"></p>
-    </div>
-    <footer class="sheet-foot">
-      <button type="button" class="btn" id="btn-deliver-best">Load most points</button>
-      <button type="button" class="btn btn-danger" id="btn-deliver-skip">Skip this contract</button>
-      <button type="button" class="btn" id="btn-deliver-close">Close early window</button>
-      <button type="button" class="btn btn-primary" id="btn-deliver-confirm">Deliver</button>
-    </footer>
   </div>
 </dialog>
 
@@ -613,9 +545,7 @@
       <button type="button" class="x" data-close aria-label="Close">×</button>
     </header>
     <div class="sheet-body">
-      <div class="verdict" id="results-verdict" hidden></div>
       <dl class="facts facts-wide" id="results-facts"></dl>
-      <div id="results-contracts"></div>
       <h3 class="sub">Roster by rarity</h3>
       <div class="roster-tiers" id="results-roster"></div>
     </div>
@@ -640,7 +570,7 @@
       <p>This English version was rebuilt independently with its own code and artwork, and the original author is not involved. No code, images or audio from that tool were copied.</p>
       <p>This English version is made by CoffeeBns: <a href="https://twitch.tv/coffeebns" target="_blank" rel="noopener">twitch.tv/coffeebns</a> and <a href="https://youtube.com/@CoffeeBns" target="_blank" rel="noopener">youtube.com/@CoffeeBns</a>.</p>
       <p>Original author: 爱玩游戏的吉吉罗 on <a href="https://v.douyin.com/okD24Xnc6wo/" target="_blank" rel="noopener">Douyin</a>, also known as 二零后游戏荒 on <a href="https://space.bilibili.com/39881994" target="_blank" rel="noopener">Bilibili</a>.</p>
-      <p>Fan-made and unofficial. It is not affiliated with or endorsed by the developers or publishers of <em>Torchlight: Infinite</em>, and game names belong to their owners. Odds, limits and the contract challenge are practice values, so live results will differ.</p>
+      <p>Fan-made and unofficial. It is not affiliated with or endorsed by the developers or publishers of <em>Torchlight: Infinite</em>, and game names belong to their owners. Odds and limits are practice values, so live results will differ.</p>
     </div>
     <footer class="sheet-foot">
       <button type="button" class="btn btn-primary" data-close>Close</button>
@@ -648,13 +578,13 @@
   </div>
 </dialog>
 
-<script src="js/engine.js?v=20261017h"></script>
-<script src="js/board.js?v=20261017h"></script>
-<script src="js/sound.js?v=20261017h"></script>
-<script src="js/guide-data.js?v=20261017h"></script>
-<script src="js/tool-combos.js?v=20261017h"></script>
-<script src="js/solver.js?v=20261017h"></script>
-<script src="js/ui.js?v=20261017h"></script>
-<script src="js/update.js?v=20261017h"></script>
+<script src="js/engine.js?v=20261018m"></script>
+<script src="js/board.js?v=20261018m"></script>
+<script src="js/sound.js?v=20261018m"></script>
+<script src="js/guide-data.js?v=20261018m"></script>
+<script src="js/tool-combos.js?v=20261018m"></script>
+<script src="js/solver.js?v=20261018m"></script>
+<script src="js/ui.js?v=20261018m"></script>
+<script src="js/update.js?v=20261018m"></script>
 </body>
 </html>

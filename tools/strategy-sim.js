@@ -194,133 +194,8 @@ function playGames(job) {
   return stats;
 }
 
-// ---------- Contract challenges ----------
-
-const LOADOUT_IDS = Object.keys(T.LOADOUTS);
-
-function newChallenge(game, i, seedWord) {
-  const loadouts = game.loadout && game.loadout !== 'all' ? [game.loadout] : LOADOUT_IDS;
-  return T.newGame({ mode: 'challenge', loadout: loadouts[i % loadouts.length], seed: `${seedWord}-${i}` });
-}
-
-function emptyChallengeStats() {
-  const slot = () => ({ ok: 0, points: 0, heavy: 0, days: 0 });
-  const group = () => ({ games: 0, passed: 0, full: 0, score: 0, passScore: 0 });
-  return {
-    games: 0, passed: 0, full: 0, score: 0, scoreSq: 0, passScore: 0, util: 0, utilSq: 0, vouchers: 0, unfinished: 0,
-    scoreHist: new Array(19).fill(0),
-    slots: [slot(), slot(), slot()],
-    fail: { noSupreme: 0, rainbowStuck: 0, noVouchers: 0, twoMissed: 0 },
-    early: 0, earlyDays: 0,
-    loadout: Object.fromEntries(LOADOUT_IDS.map((id) => [id, group()])),
-    variant: {},
-  };
-}
-
-// Adds numbers, arrays and nested objects of challenge stats.
-function mergeDeep(a, b) {
-  for (const [k, v] of Object.entries(b)) {
-    if (typeof v === 'number') a[k] = (a[k] || 0) + v;
-    else if (Array.isArray(v)) {
-      if (!a[k]) a[k] = [];
-      v.forEach((x, i) => {
-        if (typeof x === 'number') a[k][i] = (a[k][i] || 0) + x;
-        else a[k][i] = mergeDeep(a[k][i] || {}, x);
-      });
-    } else a[k] = mergeDeep(a[k] || {}, v);
-  }
-  return a;
-}
-
-// The objective: passing first, then points. A pass counts as 1000 points,
-// so 1% of pass chance is worth 10 points.
-const PASS_WEIGHT = 1000;
-
-// Why the heavy contract is about to be skipped.
-function heavyMiss(st) {
-  const board = st.cells.some((c) => !c.sealed && c.inmate && c.inmate.tier >= T.SUPREME);
-  if (board) return 'noVouchers';
-  if (st.vault.length) return st.challenge.vouchers < T.ESCORTS.heavy.cost ? 'rainbowStuck' : 'noVouchers';
-  return 'noSupreme';
-}
-
-function playChallenges(job) {
-  const stats = emptyChallengeStats();
-  for (let i = job.from; i < job.to; i++) {
-    const st = newChallenge(job.game, i, job.seed);
-    const random = S.rng32(i * 2654435761 + 7);
-    let miss = null;
-    for (let guard = 0; st.phase !== 'ended' && guard < 3000; guard++) {
-      const action = S.decide(st, job.params, random);
-      if (!action) break;
-      const ch = st.challenge;
-      if (ch.window && action.type === 'skip' && ch.deliveries.length === 2) miss = heavyMiss(st);
-      if (action.type === 'deliver' && ch.window && ch.window.early) {
-        stats.early += 1;
-        stats.earlyDays += st.day;
-      }
-      const result = S.apply(st, action);
-      if (!result.ok && !(action.type !== 'end' && S.apply(st, { type: 'end' }).ok)) break;
-    }
-    const ch = st.challenge;
-    const res = ch.result;
-    if (!res) {
-      stats.unfinished += 1;
-      continue;
-    }
-    const util = (res.passed ? PASS_WEIGHT : 0) + res.score;
-    stats.games += 1;
-    stats.passed += res.passed ? 1 : 0;
-    stats.full += res.completed === 3 ? 1 : 0;
-    stats.score += res.score;
-    stats.scoreSq += res.score * res.score;
-    stats.util += util;
-    stats.utilSq += util * util;
-    stats.vouchers += res.vouchers;
-    stats.scoreHist[Math.min(18, Math.floor(res.score / 5))] += 1;
-    if (res.passed) stats.passScore += res.score;
-    else if (!ch.deliveries[2].success) stats.fail[miss || 'noSupreme'] += 1;
-    else stats.fail.twoMissed += 1;
-    ch.deliveries.forEach((d, k) => {
-      const s = stats.slots[k];
-      if (!d.success) return;
-      s.ok += 1;
-      s.points += d.points;
-      s.heavy += d.escort === 'heavy' ? 1 : 0;
-      s.days += d.day;
-    });
-    const g = stats.loadout[st.loadout];
-    g.games += 1;
-    g.passed += res.passed ? 1 : 0;
-    g.full += res.completed === 3 ? 1 : 0;
-    g.score += res.score;
-    if (res.passed) g.passScore += res.score;
-    ch.contracts.forEach((c, k) => {
-      const key = c.bounty ? 'bounty' : c.id;
-      const v = stats.variant[key] || (stats.variant[key] = { n: 0, ok: 0, points: 0 });
-      v.n += 1;
-      if (ch.deliveries[k].success) {
-        v.ok += 1;
-        v.points += ch.deliveries[k].points;
-      }
-      // Per start: each contract's delivery rate, and why runs failed.
-      const by = stats.byLoadout || (stats.byLoadout = {});
-      const L = by[st.loadout] || (by[st.loadout] = {});
-      const w = L[key] || (L[key] = { n: 0, ok: 0 });
-      w.n += 1;
-      if (ch.deliveries[k].success) w.ok += 1;
-    });
-    if (!res.passed) {
-      const L = stats.byLoadout[st.loadout];
-      const reason = !ch.deliveries[2].success ? miss || 'noSupreme' : 'twoMissed';
-      L[`fail-${reason}`] = (L[`fail-${reason}`] || 0) + 1;
-    }
-  }
-  return stats;
-}
-
 if (!isMainThread) {
-  parentPort.on('message', ({ id, job }) => parentPort.postMessage({ id, stats: job.challenge ? playChallenges(job) : playGames(job) }));
+  parentPort.on('message', ({ id, job }) => parentPort.postMessage({ id, stats: playGames(job) }));
   return;
 }
 
@@ -358,16 +233,15 @@ for (let i = 0; i < THREADS; i++) {
 // Splits `games` games into chunks across the pool; resolves merged stats.
 // extra.from starts at a later game number, to add runs to a measurement.
 function run(policy, params, game, games, extra) {
-  const challenge = !!game.challenge;
-  const chunks = Math.max(THREADS, Math.ceil(games / (challenge ? 1000 : 2500)));
+  const chunks = Math.max(THREADS, Math.ceil(games / 2500));
   const size = Math.ceil(games / chunks);
   const first = (extra && extra.from) || 0;
   const jobs = [];
   for (let from = first; from < first + games; from += size) {
-    jobs.push({ policy, params, game, challenge, from, to: Math.min(first + games, from + size), seed: (extra && extra.seed) || SEED, stairs: !!(extra && extra.stairs) });
+    jobs.push({ policy, params, game, from, to: Math.min(first + games, from + size), seed: (extra && extra.seed) || SEED, stairs: !!(extra && extra.stairs) });
   }
   let next = 0;
-  const total = challenge ? emptyChallengeStats() : emptyStats();
+  const total = emptyStats();
   return new Promise((resolveRun) => {
     let active = 0;
     let finished = false;
@@ -387,8 +261,7 @@ function run(policy, params, game, games, extra) {
       const id = nextId++;
       active += 1;
       waiting.set(id, (stats) => {
-        if (challenge) mergeDeep(total, stats);
-        else merge(total, stats);
+        merge(total, stats);
         active -= 1;
         launch(worker);
         if (next >= jobs.length && !active) resolve(total);
@@ -399,42 +272,11 @@ function run(policy, params, game, games, extra) {
   });
 }
 
-// The measure a strategy is tuned on: Rainbows per drill, or for the
-// challenge passing first and then points (see PASS_WEIGHT).
-const isChallenge = (s) => s.util !== undefined;
-const mean = (s) => (isChallenge(s) ? s.util : s.rainbows) / s.games;
-const se = (s) => Math.sqrt(Math.max(0, (isChallenge(s) ? s.utilSq : s.rainbowsSq) / s.games - mean(s) ** 2) / s.games);
+// The measure a strategy is tuned on: Rainbows per drill.
+const mean = (s) => s.rainbows / s.games;
+const se = (s) => Math.sqrt(Math.max(0, s.rainbowsSq / s.games - mean(s) ** 2) / s.games);
 const pct = (x) => `${(100 * x).toFixed(1)}%`;
-const fmt = (s) => (isChallenge(s)
-  ? `pass ${(100 * s.passed / s.games).toFixed(2)}% · ${(s.score / s.games).toFixed(2)} pts · full ${(100 * s.full / s.games).toFixed(1)}% · value ${mean(s).toFixed(2)} ± ${(1.96 * se(s)).toFixed(2)}`
-  : `${mean(s).toFixed(4)} ± ${(1.96 * se(s)).toFixed(4)} Rainbows/run`);
-
-function describeChallenge(s) {
-  const n = Math.max(1, s.games);
-  const rate = (x) => +(x / n).toFixed(4);
-  const pass = s.passed / n;
-  const sdScore = Math.sqrt(Math.max(0, s.scoreSq / n - (s.score / n) ** 2));
-  const group = (g) => ({ games: g.games, passRate: +(g.passed / Math.max(1, g.games)).toFixed(4), fullRate: +(g.full / Math.max(1, g.games)).toFixed(4), points: +(g.score / Math.max(1, g.games)).toFixed(2), pointsWhenPassed: +(g.passScore / Math.max(1, g.passed)).toFixed(2) });
-  return {
-    games: s.games,
-    passRate: +pass.toFixed(4),
-    passCi95: +(1.96 * Math.sqrt((pass * (1 - pass)) / n)).toFixed(4),
-    fullRate: rate(s.full),
-    points: +(s.score / n).toFixed(2),
-    pointsCi95: +((1.96 * sdScore) / Math.sqrt(n)).toFixed(2),
-    pointsWhenPassed: +(s.passScore / Math.max(1, s.passed)).toFixed(2),
-    value: +mean(s).toFixed(2),
-    vouchersLeft: +(s.vouchers / n).toFixed(2),
-    fail: Object.fromEntries(Object.entries(s.fail).map(([k, v]) => [k, rate(v)])),
-    slots: s.slots.map((x) => ({ delivered: rate(x.ok), points: +(x.points / Math.max(1, x.ok)).toFixed(2), heavyEscort: +(x.heavy / Math.max(1, x.ok)).toFixed(4), day: +(x.days / Math.max(1, x.ok)).toFixed(2) })),
-    earlyRate: rate(s.early),
-    earlyDay: s.early ? +(s.earlyDays / s.early).toFixed(2) : null,
-    scoreHist: s.scoreHist.map(rate),
-    loadouts: Object.fromEntries(Object.entries(s.loadout).filter(([, g]) => g.games).map(([k, g]) => [k, group(g)])),
-    variants: Object.fromEntries(Object.entries(s.variant).map(([k, v]) => [k, { games: v.n, delivered: +(v.ok / Math.max(1, v.n)).toFixed(4), points: +(v.points / Math.max(1, v.ok)).toFixed(2) }])),
-    unfinished: s.unfinished,
-  };
-}
+const fmt = (s) => `${mean(s).toFixed(4)} ± ${(1.96 * se(s)).toFixed(4)} Rainbows/run`;
 
 function describe(s) {
   return {
@@ -531,115 +373,6 @@ function fineGrid(p) {
   };
 }
 
-// The contract challenge: the convoy settings, the contract-need term and
-// the play weights, tuned on passing first and then points.
-const CHALLENGE_GRID = {
-  keep1: [0, 0.25, 0.5, 0.75, 1, 1.5, 3],
-  keep2: [0, 0.25, 0.5, 0.75, 1, 1.5, 3],
-  reserve: [1, 2, 3, 4],
-  earlyPoints: [-1, 0, 30, 1e9],
-  stuckRainbow: [0, 0.5, 1],
-  wNeed: [0, 10, 20, 40, 80, 160],
-  needDays: [2, 3, 4, 5],
-  needCrit: [1, 2, 4, 8],
-  tierBase: [2.25, 2.5, 2.75, 3, 3.5],
-  rainbowMult: [0.5, 1, 2, 4],
-  wOpen: [0.5, 1, 1.5, 2, 3, 4],
-  wNow: [0.5, 0.75, 1.125, 1.5, 2],
-  wWalk: [0.5, 1, 1.5, 2],
-  wStep: [-1, 0, 0.5, 1, 2, 3],
-  wChain: [0, 2, 4, 8, 16],
-  wStair: [0, 0.25, 0.5, 1],
-  swapMaxTier: [-1, 0, 1, 2, 3],
-  minDevour: [-2, 0, 2, 5],
-  execMargin: [-1e9, -5, 0, 5, 20, 1e9],
-  acceptChain: [true, false],
-};
-
-// The best convoy settings found by hand, the starting point for tuning.
-const CHALLENGE_START = { keep1: 1, keep2: 1, reserve: 3, earlyPoints: -1, wNeed: 40, needCrit: 4 };
-
-async function challengeTune(games) {
-  const t0 = Date.now();
-  const game = { challenge: true, loadout: 'all' };
-  const start = Object.assign({}, S.DEFAULTS, S.PROFILES.rewards, CHALLENGE_START, loadParams() || {});
-  const tuned = await tune(game, games, Number(opt('rounds', 2)), start, CHALLENGE_GRID);
-  const name = 'challenge';
-  save(`tuned-${name}.json`, tuned.params);
-  // Old and new on a fresh set of prisons.
-  const finalGames = Number(opt('final', 600000));
-  const before = await run('solver', start, game, finalGames, { seed: 'CFINAL' });
-  const after = await run('solver', tuned.params, game, finalGames, { seed: 'CFINAL' });
-  console.log(`\n${name} on fresh prisons: before ${fmt(before)}\n                       after  ${fmt(after)}`);
-  console.log(JSON.stringify(tuned.params));
-  console.log(`\n${GAMES_PLAYED.toLocaleString()} runs in ${((Date.now() - t0) / 60000).toFixed(1)} minutes; saved tools/results/tuned-${name}.json`);
-}
-
-// The challenge data behind strategy.html: the tuned strategy measured on a
-// fresh set of prisons, then one habit changed at a time. Adds a `challenge`
-// part to the guide data (tools/results/guide-data.json and js/guide-data.js).
-async function challengeGuide(games) {
-  const t0 = Date.now();
-  const start = GAMES_PLAYED;
-  const game = { challenge: true, loadout: 'all' };
-  const seed = 'CGUIDE';
-  const habitGames = Number(opt('habit-games', 300000));
-  const tuned = Object.assign({}, S.DEFAULTS, S.PROFILES.challenge);
-  const drill = Object.assign({}, S.DEFAULTS, S.PROFILES.rewards);
-  const convoy = ['keep1', 'keep2', 'reserve', 'earlyPoints', 'stuckRainbow', 'wNeed', 'needDays', 'needCrit', 'minLeft'];
-  const out = { generated: new Date().toISOString().slice(0, 10), seed, headlineRuns: games, habitRuns: habitGames };
-
-  console.log(`\n== challenge headline: ${games.toLocaleString()} runs ==`);
-  const head = await run('solver', tuned, game, games, { seed });
-  out.headline = describeChallenge(head);
-  console.log(fmt(head));
-
-  console.log('\n== habits, one changed at a time ==');
-  const habits = [
-    ['full', 'The trained strategy', {}],
-    ['mostPointsAll', 'Sending the most points, even the heavy contract’s last voucher', { keep1: 0, keep2: 0, reserve: 0, minLeft: 0 }],
-    ['mostPoints', 'Sending the most points, keeping 1 voucher', { keep1: 0, keep2: 0, reserve: 1 }],
-    ['lightMost', 'Most points, but by light escort only', { keep1: 0, keep2: 0 }],
-    ['reserve1', 'Cheap cargo, but heavy escorts allowed early', { reserve: 1 }],
-    ['keepHalf', 'Sending some Rares on the first two', { keep1: 0.5, keep2: 0.5 }],
-    ['noNeed', 'Ignoring the next contract while playing', { wNeed: 0 }],
-    ['earlyAny', 'Shipping the heavy contract as soon as it qualifies', { earlyPoints: 0 }],
-    [tuned.earlyPoints < 0 ? 'neverEarly' : 'earlyFull', tuned.earlyPoints < 0 ? 'Never shipping the heavy contract early' : 'Shipping the heavy contract early once its escort is full', { earlyPoints: tuned.earlyPoints < 0 ? 1e9 : -1 }],
-    ['drillPlay', 'Playing with the drill weights (convoys unchanged)', Object.assign({}, drill, Object.fromEntries(convoy.map((k) => [k, tuned[k]])))],
-  ];
-  out.habits = [];
-  for (const [id, label, change] of habits) {
-    const stats = id === 'full' ? head : await run('solver', Object.assign({}, tuned, change), game, habitGames, { seed });
-    const d = describeChallenge(stats);
-    out.habits.push({ id, label, passRate: d.passRate, passCi95: d.passCi95, points: d.points, fullRate: d.fullRate, value: d.value, fail: d.fail });
-    console.log(`${label.padEnd(66)} ${fmt(stats)}`);
-  }
-
-  // Points against passing: how much richer cargo on the first two costs.
-  console.log('\n== cargo on the first two contracts ==');
-  out.frontier = [];
-  for (const keep of [0, 0.25, 0.5, 0.75, 1, 1.5]) {
-    const stats = await run('solver', Object.assign({}, tuned, { keep1: keep, keep2: keep }), game, habitGames, { seed });
-    const d = describeChallenge(stats);
-    out.frontier.push({ keep, passRate: d.passRate, points: d.points, slot1: d.slots[0].points, slot2: d.slots[1].points });
-    console.log(`keep ${String(keep).padEnd(5)} ${fmt(stats)}  contract 1 ${d.slots[0].points} pts, contract 2 ${d.slots[1].points} pts`);
-  }
-
-  out.params = tuned;
-  out.totalRuns = GAMES_PLAYED - start;
-  out.minutes = +((Date.now() - t0) / 60000).toFixed(1);
-  // Merge into the guide data.
-  const file = path.join(RESULTS, 'guide-data.json');
-  const data = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
-  data.challenge = out;
-  save('guide-data.json', data);
-  save('challenge-data.json', out);
-  fs.writeFileSync(path.join(__dirname, '..', 'js', 'guide-data.js'), `/* Generated by tools/strategy-sim.js guide and cguide. Do not edit by hand. */\nwindow.TARTARUS_GUIDE = ${JSON.stringify(data)};\n`);
-  console.log(`\n${out.totalRuns.toLocaleString()} challenge runs in ${out.minutes} minutes; saved tools/results/challenge-data.json and js/guide-data.js`);
-}
-
-// Training: fine-tunes every profile the solver uses, then scores the old
-// and new weights on a fresh set of prisons, so the comparison is fair.
 async function train(games) {
   const t0 = Date.now();
   const finalGames = Number(opt('final', 1000000));
@@ -873,8 +606,10 @@ async function guide(games) {
   const head = await run('solver', pRewards, rewards, games, { seed, stairs: true });
   out.headline = describe(head);
   console.log(fmt(head));
+  // Chain odds by eater tier: the cases with at least 1 consume per 100 runs
+  // (1,000 in 100,000), and at least 100.
   out.stairs = Object.entries(head.stairs)
-    .filter(([, v]) => v.n >= 1000)
+    .filter(([, v]) => v.n >= Math.max(100, games / 100))
     .map(([k, v]) => ({ key: k, n: v.n, rainbow: +(v.rainbow / v.n).toFixed(4), bites: +(v.bites / v.n).toFixed(3) }))
     .sort((a, b) => b.n - a.n);
 
@@ -924,12 +659,6 @@ async function guide(games) {
   out.params = { notools: pNotools, rewards: pRewards };
   out.totalRuns = GAMES_PLAYED - start;
   out.minutes = +((Date.now() - t0) / 60000).toFixed(1);
-  // Keep the challenge study (cguide mode) that shares this file.
-  const prevFile = path.join(RESULTS, 'guide-data.json');
-  if (fs.existsSync(prevFile)) {
-    const prev = JSON.parse(fs.readFileSync(prevFile, 'utf8'));
-    if (prev.challenge) out.challenge = prev.challenge;
-  }
   save('guide-data.json', out);
   save('tuned-notools.json', pNotools);
   save('tuned-rewards.json', pRewards);
@@ -1044,10 +773,6 @@ async function main() {
     await guide(games);
   } else if (mode === 'train') {
     await train(games);
-  } else if (mode === 'ctune') {
-    await challengeTune(games);
-  } else if (mode === 'cguide') {
-    await challengeGuide(games);
   } else if (mode === 'guide-tools') {
     await guideTools();
   } else if (mode === 'combos') {
@@ -1067,31 +792,6 @@ async function main() {
       const stats = await run('solver', Object.assign({}, base, change), game, games);
       first = first || stats;
       console.log(`[${variant || profile}] ${fmt(stats)}${stats === first ? '' : `  (${mean(stats) - mean(first) >= 0 ? '+' : ''}${(mean(stats) - mean(first)).toFixed(4)})`}`);
-    }
-  } else if (mode === 'challenge') {
-    const cgame = { challenge: true, loadout: opt('loadout', 'all') };
-    // Variants separated by ";", each a list of key=value changes to the
-    // challenge's profile, e.g. --variants "reserve=3;reserve=3,keep1=0.5".
-    const base = loadParams() || Object.assign({}, S.DEFAULTS, S.PROFILES.challenge);
-    const variants = String(opt('variants', '')).split(';').map((v) => v.trim());
-    for (const variant of variants) {
-      const change = {};
-      for (const pair of variant.split(',').filter(Boolean)) {
-        const [k, v] = pair.split('=').map((x) => x.trim());
-        // toolFirst=id moves one tool to the top of the ranking.
-        if (k === 'toolFirst') change.toolRank = [v, ...base.toolRank.filter((t) => t !== v)];
-        else if (k === 'toolRank') change.toolRank = v.split('|');
-        else change[k] = v === 'true' ? true : v === 'false' ? false : Number(v);
-      }
-      const start = Date.now();
-      const stats = await run('solver', Object.assign({}, base, change), cgame, games);
-      const secs = (Date.now() - start) / 1000;
-      console.log(`\n[${variant || 'profile'}] ${fmt(stats)}  ${stats.games.toLocaleString()} runs in ${secs.toFixed(1)}s (${Math.round(stats.games / secs).toLocaleString()} runs/s)`);
-      const d = describeChallenge(stats);
-      console.log(`  fail ${JSON.stringify(d.fail)}  slots ${JSON.stringify(d.slots)}  early ${d.earlyRate} day ${d.earlyDay}  vouchers ${d.vouchersLeft}`);
-      console.log(`  loadouts ${JSON.stringify(d.loadouts)}`);
-      console.log(`  contracts ${JSON.stringify(d.variants)}`);
-      if (opt('detail', false)) console.log(`  by loadout ${JSON.stringify(stats.byLoadout)}`);
     }
   }
   console.log(`\ndone in ${((Date.now() - t0) / 1000).toFixed(1)}s`);

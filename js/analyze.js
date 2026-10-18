@@ -1,6 +1,6 @@
 /* Tartarus Simulator: board analyzer.
  * The player sets up their board by hand: every cell, the warden, today's
- * doors, tools, vault and contracts. The page turns that into an engine state
+ * doors, tools and vault. The page turns that into an engine state
  * and asks js/solver.js for the best move: the trained strategy's pick right
  * away, then a live check that plays every option out many times. "Do it here"
  * plays the move with the simulator's dice, so the player only has to fix what
@@ -15,9 +15,9 @@
   const SHARE = window.TartarusLive || null;
   // The event kinds and steps the live collector (worker/) accepts.
   const COLLECTOR_EVENTS = ['unknown', 'chain', 'execution'];
-  const COLLECTOR_STEPS = ['patrol', 'manage', 'event', 'choice', 'window'];
+  const COLLECTOR_STEPS = ['patrol', 'manage', 'event', 'choice'];
   // The moves "Do it here" can record that the deployed collector knows.
-  const COLLECTOR_ACTIONS = ['patrol', 'devour', 'swap', 'end', 'event', 'choose', 'deliver', 'skip', 'close', 'early'];
+  const COLLECTOR_ACTIONS = ['patrol', 'devour', 'swap', 'end', 'event', 'choose'];
   const $ = (id) => document.getElementById(id);
   const L = (n) => T.cellLabel(n);
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -46,14 +46,15 @@
   const SAVE_KEY = 'tartarus-sim:save:v2';
   const PLAYOUT_BUDGET = 9600; // playouts per check, shared across the options
   const LIVE_MIN = 150; // playouts per option before the live check can lead
+  const SWITCH_MIN = 0.05; // Rainbows a live pick must gain over the strategy's to replace it
   // The check ends early once the leader is ahead of every other move by
   // CLEAR_SE of its paired margins (after LIVE_MIN playouts each), and in any
   // case after CHECK_MS, with what it has then. The user: a decision within a
   // second of the picture, "faster is way better".
   const CLEAR_SE = 3;
   const CHECK_MS = 700;
-  const STEPS = ['patrol', 'manage', 'office', 'chain', 'event', 'ratway', 'choice', 'window'];
-  const STEP_NAMES = { patrol: 'Which door to patrol', manage: 'After the patrol', office: 'Instigate or Bestow', chain: 'A meal to pick, or Cancel', event: 'A special event', ratway: 'Sewer Ratway: any cell', choice: 'A tool or gift', window: 'A delivery' };
+  const STEPS = ['patrol', 'manage', 'office', 'chain', 'event', 'ratway', 'choice'];
+  const STEP_NAMES = { patrol: 'Which door to patrol', manage: 'After the patrol', office: 'Instigate or Bestow', chain: 'A meal to pick, or Cancel', event: 'A special event', ratway: 'Sewer Ratway: any cell', choice: 'A tool or gift' };
   const BEAST_KEYS = { m: 'mammoth', l: 'lion', w: 'wolf', r: 'rat' };
   const TOP_TIER = T.SUPREME; // Rainbows leave for the vault, so cells hold Normal to Supreme
 
@@ -130,15 +131,22 @@
       // Days of this run whose morning offered a door short (see scanToModel).
       shortDays: [],
       // The game shows no Replace / Consume card now (read from a screenshot):
-      // that move isn't advised, and the other one still can be.
+      // that move isn't advised, and the other one still can be. noHunt: no
+      // Hunt (the Blood-Stained Trap) on offer either.
       noSwap: false,
       noDevour: false,
+      noHunt: false,
+      // The cells the game framed on the Hunt's pick (only those can be
+      // marked), while it's open.
+      huntOnly: null,
+      // The office shows one card only (read from a screenshot): 'bestow' or
+      // 'instigate'.
+      officeOnly: null,
       eventKind: 'chain',
       // rerolls: a pet's re-rolls left on an instrument offer. picks: the
       // Warden's Treasure picks waiting, this one included (3 a Treasure
       // with Opulence).
       choice: { kind: 'tool', options: [], rerolls: 0, picks: 1 },
-      windowKind: 'due',
       chainArmed: false,
       // Until the player sets it, no objective's tool is assumed.
       objective: 'other',
@@ -149,7 +157,6 @@
       tools: [],
       vault: [],
       cells: Array.from({ length: T.CELL_COUNT }, (_, n) => (n === T.OFFICE ? officeCell() : sealedCell())),
-      ch: { vouchers: T.START_VOUCHERS, contracts: ['mixed', 'elite', 'heavy'], bounty: 'wolf', status: ['pending', 'pending'], points: [0, 0] },
     };
   }
 
@@ -158,7 +165,11 @@
     const base = blankModel();
     if (!m || typeof m !== 'object' || !Array.isArray(m.cells) || m.cells.length !== T.CELL_COUNT) return base;
     const out = Object.assign(base, m);
-    out.ch = Object.assign(blankModel().ch, m.ch || {});
+    // Every board is a drill: the contract challenge is gone (it isn't in
+    // the live game), and a board saved in it goes on as a drill.
+    out.mode = 'drill';
+    delete out.ch;
+    delete out.windowKind;
     out.choice = Object.assign(blankModel().choice, m.choice || {});
     out.choice.rerolls = clamp(toInt(out.choice.rerolls, 0), 0, 9);
     out.choice.picks = clamp(toInt(out.choice.picks, 1), 1, 30);
@@ -177,37 +188,12 @@
     return out;
   }
 
-  function makeContract(slot, id, bounty) {
-    const def = T.CONTRACT_SLOTS[slot];
-    const v = def.variants.find((x) => x.id === id) || def.variants[0];
-    const contract = { slot, id: v.id, name: v.name, needs: v.needs.slice(), deadline: def.deadline, heavy: !!def.heavy };
-    if (v.id === 'bounty') {
-      contract.bounty = T.BEASTS.includes(bounty) ? bounty : 'wolf';
-      contract.needs = ['At least 1 Supreme or Rainbow', `+8 points per Supreme or Rainbow ${T.beastName(contract.bounty)}`];
-    }
-    return contract;
-  }
-
-  // What the inmate in cell n could eat only as a second meal (a Mammoth
-  // eating a Wolf, a Lion a Rat) at its own rarity, which the simulator has
-  // from Legendary up (doubleEatTier). Players' games have offered such
-  // meals lower (reports 206 and 208), so a board with nothing else to eat
-  // says so instead of calling itself misread.
-  function secondMealCells(st, n) {
-    const eater = st.cells[n] && st.cells[n].inmate;
-    if (!eater) return [];
-    const loose = Object.assign({}, st, { params: Object.assign({}, st.params, { doubleEatTier: 0 }) });
-    return st.cells.filter((c) => c.n !== n && !c.sealed && c.inmate && !T.canEat(st, eater, c.inmate) && T.canEat(loose, eater, c.inmate)).map((c) => c.n);
-  }
-  const mealList = (st, cells) => cells.map((n) => `the ${T.describe(st.cells[n].inmate)} in ${L(n)}`).join(', ');
-
   // The engine state for a model, and anything that stops it from being
   // analyzed. Events the player can't name get a kind the solver re-rolls.
   function buildState(m) {
     const problems = [];
-    const challenge = m.mode === 'challenge';
-    const params = challenge ? {} : { rewards: !!m.rewards, drillDays: clamp(toInt(m.maxDays, 20), 5, 60) };
-    const st = T.newGame({ mode: challenge ? 'challenge' : 'drill', params, seed: 'ANALYZER', loadout: 'supply' });
+    const params = { rewards: !!m.rewards, drillDays: clamp(toInt(m.maxDays, 20), 5, 60) };
+    const st = T.newGame({ params, seed: 'ANALYZER' });
     st.rng = (Math.random() * 4294967296) >>> 0;
     st.log = [];
     st.day = clamp(toInt(m.day, 1), 1, st.maxDays);
@@ -228,6 +214,7 @@
       else if (c.kind === 'inmate') {
         cell.sealed = false;
         cell.inmate = make(c.beast, c.tier);
+        if (c.marked) cell.inmate.marked = true;
         cell.ivory = !!c.ivory;
         // An event can wait in an open cell ("Can trigger Prison Incident").
         setEvent();
@@ -285,27 +272,8 @@
     st.pending = [];
     st.phase = 'manage';
 
-    if (challenge) {
-      const ch = st.challenge;
-      ch.vouchers = clamp(toInt(m.ch.vouchers, T.START_VOUCHERS), 0, T.START_VOUCHERS);
-      ch.contracts = [0, 1, 2].map((slot) => makeContract(slot, m.ch.contracts[slot], m.ch.bounty));
-      ch.deliveries = [];
-      ch.score = 0;
-      for (let slot = 0; slot < 2; slot++) {
-        const status = m.ch.status[slot];
-        if (status !== 'delivered' && status !== 'skipped') break;
-        const points = status === 'delivered' ? clamp(toInt(m.ch.points[slot], 0), 0, 999) : 0;
-        ch.deliveries.push({ slot, day: ch.contracts[slot].deadline, success: status === 'delivered', points, cost: 0, pressure: 0, escort: status === 'delivered' ? 'light' : null, names: [], early: false });
-        ch.score += points;
-      }
-      if (m.ch.status[0] === 'pending' && m.ch.status[1] !== 'pending') problems.push('Contract 2 can only be settled after contract 1.');
-      const next = ch.contracts[ch.deliveries.length];
-      if (next && !next.heavy && st.day > next.deadline) problems.push(`"${next.name}" was due at the end of day ${next.deadline}. Mark it delivered or skipped.`);
-      ch.window = null;
-    }
-
     const usedToday = () => {
-      st.used = { swap: m.swapUsed ? 1 : 0, devour: m.devourUsed ? 1 : 0, devourAfterSwap: !!m.consumeOffered, noSwap: !!m.noSwap, noDevour: !!m.noDevour };
+      st.used = { swap: m.swapUsed ? 1 : 0, devour: m.devourUsed ? 1 : 0, devourAfterSwap: !!m.consumeOffered, noSwap: !!m.noSwap, noDevour: !!m.noDevour, noHunt: !!m.noHunt, huntOnly: Array.isArray(m.huntOnly) ? m.huntOnly.slice() : null, officeOnly: m.officeOnly || null };
     };
     switch (m.step) {
       case 'patrol': {
@@ -350,27 +318,12 @@
       }
       case 'choice': {
         usedToday();
-        const kind = ['tool', 'refit', 'gift'].includes(m.choice.kind) ? m.choice.kind : 'tool';
+        const kind = m.choice.kind === 'gift' ? 'gift' : 'tool';
         const options = kind === 'gift' ? T.GIFT_IDS.slice() : [...new Set(m.choice.options)].filter((id) => T.TOOLS[id] && !st.tools.includes(id));
         if (!options.length) problems.push('Pick the tools on offer.');
-        if (kind === 'refit' && !challenge) problems.push('Refits only follow contract deliveries. Pick the contract challenge, or another kind of offer.');
-        st.pending = [{ kind, options, slot: challenge ? Math.max(0, st.challenge.deliveries.length - 1) : 0, refreshed: false, rerolls: kind === 'tool' ? m.choice.rerolls || 0 : 0 }];
+        st.pending = [{ kind, options, rerolls: kind === 'tool' ? m.choice.rerolls || 0 : 0 }];
         // The Treasure's picks still waiting after this one (Opulence).
-        if (kind === 'gift') for (let k = 1; k < clamp(toInt(m.choice.picks, 1), 1, 30); k++) st.pending.push({ kind, options: options.slice(), slot: 0, refreshed: false, rerolls: 0 });
-        break;
-      }
-      case 'window': {
-        if (!challenge) {
-          problems.push('Deliveries are part of the contract challenge. Switch the goal to Contract challenge.');
-          break;
-        }
-        const ch = st.challenge;
-        const early = m.windowKind === 'early';
-        const next = ch.contracts[ch.deliveries.length];
-        if (!next) problems.push('Every contract is already settled.');
-        else if (early && !next.heavy) problems.push('The early window is only for the heavy contract, once the first two are settled.');
-        else if (early && st.day < 9) problems.push('The heavy contract can be delivered early from day 9.');
-        ch.window = { early };
+        if (kind === 'gift') for (let k = 1; k < clamp(toInt(m.choice.picks, 1), 1, 30); k++) st.pending.push({ kind, options: options.slice(), rerolls: 0 });
         break;
       }
       case 'chain': {
@@ -385,10 +338,7 @@
         }
         st.chaining = { eater: here.inmate.id, at: 0, bites: [] };
         if (!T.chainOptions(st).length) {
-          const second = secondMealCells(st, st.position);
-          problems.push(second.length
-            ? `Your game asks for a meal only when the chaining inmate has one to eat. On this board the ${T.describe(here.inmate)} has only second meals (${mealList(st, second)}), which the simulator allows only from Legendary up, or in a run with Cage Fight: if this run has Cage Fight, set it under Start of run.`
-            : "Your game asks for a meal only when the chaining inmate has one to eat. Check the board: it can't find a meal for it.");
+          problems.push("Your game asks for a meal only when the chaining inmate has one to eat. Check the board: it can't find a meal for it.");
         }
         break;
       }
@@ -411,10 +361,9 @@
   // "Do it here". `prev` keeps what the player knew about event kinds.
   function modelFrom(st, prev) {
     const m = blankModel();
-    m.mode = st.mode === 'challenge' ? 'challenge' : 'drill';
     m.rewards = !!st.params.rewards;
     m.day = st.day;
-    m.maxDays = st.mode === 'challenge' ? (prev ? prev.maxDays : T.DEFAULT_PARAMS.drillDays) : st.maxDays;
+    m.maxDays = st.maxDays;
     m.warden = st.position;
     m.chainArmed = !!st.chain;
     m.objective = st.objective ? st.objective.id : 'other';
@@ -439,15 +388,11 @@
       if (!c.inmate) return { kind: 'empty' };
       const link = T.linkOf(st, c.inmate.id);
       const preyCell = link && link.lion === c.inmate.id ? T.cellOf(st, link.prey) : null;
-      return { kind: 'inmate', beast: c.inmate.beast, tier: Math.min(TOP_TIER, c.inmate.tier), ivory: !!c.ivory, prey: preyCell ? { cell: preyCell.n, rounds: link.rounds } : null, event };
+      return { kind: 'inmate', beast: c.inmate.beast, tier: Math.min(TOP_TIER, c.inmate.tier), ivory: !!c.ivory, prey: preyCell ? { cell: preyCell.n, rounds: link.rounds } : null, marked: !!c.inmate.marked, event };
     });
-    const ch = st.challenge;
     if (st.pending.length) {
       m.step = 'choice';
       m.choice = { kind: st.pending[0].kind, options: st.pending[0].options.slice(), rerolls: st.pending[0].rerolls || 0, picks: st.pending[0].kind === 'gift' ? st.pending.filter((p) => p.kind === 'gift').length : 1 };
-    } else if (ch && ch.window) {
-      m.step = 'window';
-      m.windowKind = ch.window.early ? 'early' : 'due';
     } else if (st.phase === 'event' && st.event) {
       m.step = 'event';
       m.eventKind = st.event.kind;
@@ -462,14 +407,9 @@
     m.consumeOffered = !!st.used.devourAfterSwap;
     m.noSwap = !!st.used.noSwap;
     m.noDevour = !!st.used.noDevour;
-    if (ch) {
-      m.ch.vouchers = ch.vouchers;
-      m.ch.contracts = ch.contracts.map((c) => c.id);
-      const bounty = ch.contracts.find((c) => c.bounty);
-      if (bounty) m.ch.bounty = bounty.bounty;
-      m.ch.status = [0, 1].map((slot) => (!ch.deliveries[slot] ? 'pending' : ch.deliveries[slot].success ? 'delivered' : 'skipped'));
-      m.ch.points = [0, 1].map((slot) => (ch.deliveries[slot] && ch.deliveries[slot].success ? ch.deliveries[slot].points : 0));
-    }
+    m.noHunt = !!st.used.noHunt;
+    m.huntOnly = Array.isArray(st.used.huntOnly) ? st.used.huntOnly.slice() : null;
+    m.officeOnly = st.phase === 'office' && st.used.officeOnly ? st.used.officeOnly : null;
     m.ended = st.phase === 'ended';
     return m;
   }
@@ -687,12 +627,10 @@
     if (m.id !== solver.id || !solver.shares || (solver.result && solver.result.early)) return;
     const share = solver.shares[k];
     if (m.meta && !solver.meta) solver.meta = m.meta;
-    if (!share.rows) share.rows = m.rows.map(() => ({ vals: [], pass: 0, points: 0, best: 0 }));
+    if (!share.rows) share.rows = m.rows.map(() => ({ vals: [], best: 0 }));
     m.rows.forEach((r, i) => {
       const row = share.rows[i];
       for (const v of r.vals) row.vals.push(v);
-      row.pass = r.pass;
-      row.points = r.points;
       row.best = r.best;
     });
     share.rounds = m.rounds;
@@ -711,13 +649,11 @@
     mergeTimer = 0;
     if (!solver.shares || !solver.meta) return;
     const rows = solver.meta.map((meta, i) => {
-      const row = Object.assign({ vals: [], pass: 0, points: 0, best: 0 }, meta);
+      const row = Object.assign({ vals: [], best: 0 }, meta);
       for (const s of solver.shares) {
         const r = s.rows && s.rows[i];
         if (!r) continue;
         for (const v of r.vals) row.vals.push(v);
-        row.pass += r.pass;
-        row.points += r.points;
         row.best += r.best;
       }
       return row;
@@ -770,9 +706,20 @@
   // How far the live check has got, 0 to 1.
   const progress = () => (solver.result && solver.target ? Math.min(1, solver.result.rounds / solver.target) : 0);
 
+  // On a meal pick ("Select an Inmate to Consume") the choices are a meal or
+  // Cancel. When the best move there is not to consume, the advice says
+  // Cancel, which ends a chain or leaves the day's first consume (report
+  // 323: "recommended to End day instead of cancel consume").
+  function recommendation() {
+    const rec = bestMove();
+    const rd = reader.reading;
+    if (!rec || !rec.action || rec.action.type !== 'end' || !rd || !rd.chain || model.step !== 'manage') return rec;
+    return Object.assign({}, rec, { label: 'Cancel the consume, then end the day', why: `Your game shows a meal pick, where a meal or Cancel are the choices. ${rec.why || ''}`.trim() });
+  }
+
   // The strategy's instant pick, unless the live check finds a clearly better
   // move (by more than its paired margin), so the advice doesn't flicker.
-  function recommendation() {
+  function bestMove() {
     if (!solver.st) return null;
     const pick = solver.instant;
     const r = solver.result;
@@ -782,7 +729,11 @@
     const live = r && ranked.length > 1 && ((r.done && !r.early) || r.rounds >= LIVE_MIN) ? ranked[0] : null;
     const mine = pick && ranked.find((o) => S.sameAction(o.action, pick.action));
     if (!live) return pick ? Object.assign({ live: false }, pick, { option: mine || null }) : ranked.length === 1 ? { action: ranked[0].action, label: ranked[0].label, why: 'It’s the only move here.', live: true, option: ranked[0] } : null;
-    if (mine && (mine === live || live.mean - mine.mean <= 1.96 * mine.gapSe)) {
+    // A better move must also win by a margin worth playing for: shared dice
+    // make the paired margin narrow, and a near tie flipped the advice from
+    // one screen to the next (report 337: End 2.85 against the strategy's
+    // consume at 2.82).
+    if (mine && (mine === live || live.mean - mine.mean <= Math.max(1.96 * mine.gapSe, SWITCH_MIN))) {
       const why = mine === live ? pick.why : `${pick.why} The live check rates it about equal to the best.`;
       return Object.assign({ live: true, rounds: r.rounds }, pick, { label: mine.label, why, option: mine });
     }
@@ -790,13 +741,11 @@
   }
 
   function fmtOption(goal, o, st) {
-    if (goal === 'contract') return `${Math.round(100 * o.pass)}% pass · ${o.points.toFixed(0)} pts`;
     return `${o.mean.toFixed(2)}${o.n > 1 ? ` ±${(1.96 * o.se).toFixed(2)}` : ''}`;
   }
 
   function expectText(goal, o, st) {
     if (!o) return '';
-    if (goal === 'contract') return `Expected: ${Math.round(100 * o.pass)}% chance to pass, ${o.points.toFixed(0)} contract points.`;
     return `Expected: ${o.mean.toFixed(2)} Rainbows in the vault by the end of day ${st.maxDays}.`;
   }
 
@@ -833,7 +782,7 @@
     let more = 0;
     const startDay = st.day;
     if (toNextDay) {
-      const nextPatrol = () => st.day > startDay && st.phase === 'patrol' && !st.pending.length && !(st.challenge && st.challenge.window);
+      const nextPatrol = () => st.day > startDay && st.phase === 'patrol' && !st.pending.length;
       for (let i = 0; i < 80 && st.phase !== 'ended' && !nextPatrol(); i++) {
         let next = null;
         try {
@@ -945,6 +894,7 @@
         btn('sealed:convict', 'Locked door with High-Risk Convict', B.MARKS.convict),
         btn('sealed:crow', 'Locked door with Crow Whispers', B.MARKS.crow),
         btn('sealed:freedom', 'Locked door with Taste of Freedom', B.MARKS.freedom),
+        btn('sealed:portion', 'Locked door with Extra Portion', B.MARKS.portion),
         btn('sealed:usurp1', 'Locked door with Usurpation I', B.MARKS.usurp1),
         btn('sealed:usurp2', 'Locked door with Usurpation II', B.MARKS.usurp2),
         btn('sealed:usurp3', 'Locked door with Usurpation III', B.MARKS.usurp3),
@@ -986,7 +936,6 @@
     if (a && a.type === 'patrol') best.add(a.cell);
     if (a && a.type === 'devour') best.add(a.to);
     if (a && a.type === 'swap') best.add(st.position);
-    if (a && a.type === 'deliver') a.cells.forEach((n) => best.add(n));
     const doors = model.step === 'patrol' ? new Set(model.dest) : new Set();
     $('az-board').classList.toggle('is-patrolling', doors.size > 0);
     for (const cell of st.cells) {
@@ -1003,6 +952,7 @@
       else if (mc.event === 'crow') badges = badges.replace('>Event<', '>Crow<');
       else if (mc.event === 'freedom') badges = badges.replace('>Event<', '>Freedom<');
       else if (mc.event === 'usurp1') badges = badges.replace('>Event<', '>Usurp. I<');
+      else if (mc.event === 'portion') badges = badges.replace('>Event<', '>Portion<');
       else if (mc.event === 'usurp2') badges = badges.replace('>Event<', '>Usurp. II<');
       else if (mc.event === 'hunt') badges = badges.replace('>Event<', '>Hunt<');
       if (cell.n === selected) p.cls.push('is-selected');
@@ -1014,7 +964,7 @@
       setHTML(el.hint, p.hint);
       setHTML(el.badges, badges);
       setHTML(el.warden, p.warden ? B.LANTERN : '');
-      const tag = best.has(cell.n) ? (a.type === 'deliver' ? 'Send' : a.type === 'swap' ? 'Replace' : a.type === 'devour' ? 'Eat' : 'Go') : flags.has(cell.n) ? 'Check' : doors.has(cell.n) ? 'Door' : '';
+      const tag = best.has(cell.n) ? (a.type === 'swap' ? 'Replace' : a.type === 'devour' ? 'Eat' : 'Go') : flags.has(cell.n) ? 'Check' : doors.has(cell.n) ? 'Door' : '';
       el.tag.textContent = tag;
       el.btn.setAttribute('aria-label', `${p.label}${doors.has(cell.n) ? ". One of today's doors" : ''}${tag === 'Check' ? '. Changed by the simulator: check it against your game' : ''}`);
       el.btn.setAttribute('aria-pressed', String(cell.n === selected));
@@ -1040,7 +990,7 @@
       title = rec.label;
       detail = rec.option ? expectText(solver.result.goal, rec.option, solver.st) : 'Checking with playouts…';
     } else {
-      const day = model.mode === 'challenge' ? `Day ${model.day} of ${T.CHALLENGE_DAYS}` : `Day ${model.day} of ${model.maxDays}`;
+      const day = `Day ${model.day} of ${model.maxDays}`;
       title = 'Your board';
       detail = `${day} · ${STEP_NAMES[model.step]} · warden ${model.warden === T.OFFICE ? 'in the office' : `at cell ${L(model.warden)}`}`;
     }
@@ -1102,18 +1052,13 @@
   }
 
   function renderSettings() {
-    const challenge = model.mode === 'challenge';
-    pressGroup('az-mode', model.mode);
-    const maxDays = challenge ? T.CHALLENGE_DAYS : clamp(toInt(model.maxDays, 20), 5, 60);
+    const maxDays = clamp(toInt(model.maxDays, 20), 5, 60);
     // The game counts down: "N day(s) until Riot" on day maxDays - N.
     const riot = $('az-riot');
     riot.max = String(maxDays - 1);
     if (document.activeElement !== riot) riot.value = String(maxDays - clamp(toInt(model.day, 1), 1, maxDays));
     $('az-dayof').textContent = `Day ${model.day} of ${maxDays}`;
     $('az-days').value = String(maxDays);
-    $('az-days-wrap').hidden = challenge;
-    $('az-days-fixed').hidden = !challenge;
-    $('az-step-window').hidden = !challenge;
     pressGroup('az-step', model.step);
     for (const box of document.querySelectorAll('.az-stepbox')) {
       const steps = box.dataset.step.split(' ');
@@ -1135,9 +1080,6 @@
     pressGroup('az-event-kind', model.eventKind);
     pressGroup('az-choice-kind', model.choice.kind);
     renderOffer();
-    pressGroup('az-window-kind', model.windowKind);
-    const next = challenge ? nextContract() : null;
-    $('az-window-note').textContent = !next ? '' : model.windowKind === 'early' ? 'From day 9, once the first two contracts are settled. Delivering it ends the run.' : `"${next.name}": ${next.needs.join(', ').toLowerCase()}.`;
     $('az-armed').checked = !!model.chainArmed;
     for (const b of $('az-tools').querySelectorAll('[data-tool]')) b.setAttribute('aria-pressed', String(model.tools.includes(b.dataset.tool)));
     $('az-tools-confirm').hidden = !model.toolsToConfirm;
@@ -1157,8 +1099,7 @@
       toolBox.dataset.order = order.join(',');
       toolBox.scrollTop = 0;
     }
-    $('az-rewards-wrap').hidden = challenge;
-    $('az-rewards').checked = challenge || !!model.rewards;
+    $('az-rewards').checked = !!model.rewards;
     const goal = model.objective;
     $('az-objective').value = goal;
     $('az-objective-text').textContent = T.OBJECTIVES[goal].text;
@@ -1181,8 +1122,6 @@
         ? `<button type="button" class="az-hex is-filled t5" data-unvault="${i}" title="Chromatic ${esc(T.beastName(beast))}: click to remove">${B.PORTRAITS[beast]}</button>`
         : '<span class="az-hex" aria-hidden="true"></span>';
     }).join(''));
-    $('az-challenge').hidden = !challenge;
-    if (challenge) renderContracts();
   }
 
   function cellShort(c) {
@@ -1214,34 +1153,6 @@
       (kind === 'tool' ? `<label class="field"><span class="field-label">Re-rolls left</span><input type="number" id="az-rerolls" min="0" max="9" step="1" value="${model.choice.rerolls || 0}"></label>` : '');
   }
 
-  function nextContract() {
-    const slot = model.ch.status[0] === 'pending' ? 0 : model.ch.status[1] === 'pending' ? 1 : 2;
-    return makeContract(slot, model.ch.contracts[slot], model.ch.bounty);
-  }
-
-  function renderContracts() {
-    $('az-vouchers').value = String(model.ch.vouchers);
-    $('az-contracts').innerHTML = [0, 1, 2]
-      .map((slot) => {
-        const def = T.CONTRACT_SLOTS[slot];
-        const id = model.ch.contracts[slot];
-        const variants = def.variants.map((v) => `<option value="${v.id}"${v.id === id ? ' selected' : ''}>${esc(v.name)}</option>`).join('');
-        const contract = makeContract(slot, id, model.ch.bounty);
-        let extra = '';
-        if (slot < 2) {
-          const status = model.ch.status[slot];
-          const locked = slot === 1 && model.ch.status[0] === 'pending';
-          extra = `<div class="az-seg az-status" data-status="${slot}">${['pending', 'delivered', 'skipped']
-            .map((s) => `<button type="button" data-v="${s}" aria-pressed="${status === s}"${locked && s !== 'pending' ? ' disabled' : ''}>${s === 'pending' ? 'Still to come' : s === 'delivered' ? 'Delivered' : 'Skipped'}</button>`)
-            .join('')}</div>${status === 'delivered' ? `<label class="field az-points"><span class="field-label">Points it scored</span><input type="number" min="0" max="999" step="1" data-points="${slot}" value="${toInt(model.ch.points[slot], 0)}"></label>` : ''}`;
-        } else if (id === 'bounty') {
-          extra = `<label class="field"><span class="field-label">Bounty beast</span><select id="az-bounty">${T.BEASTS.map((b) => `<option value="${b}"${b === model.ch.bounty ? ' selected' : ''}>${esc(T.beastName(b))}</option>`).join('')}</select></label>`;
-        }
-        return `<div class="az-contract"><label class="field"><span class="field-label">Due day ${def.deadline}${def.heavy ? ' · heavy' : ''}</span><select data-contract="${slot}">${variants}</select></label><p class="az-needs">${esc(contract.needs.join(' · '))}</p>${extra}</div>`;
-      })
-      .join('');
-  }
-
   // Updates a list in place, keeping rows by key, so a button under the
   // pointer survives the refreshes of a live check.
   function syncRows(list, items, keyOf, make, fill) {
@@ -1262,7 +1173,7 @@
     for (const [key, li] of old) if (!keep.has(key)) li.remove();
   }
 
-  const actionKey = (a) => [a.type, a.cell, a.to, a.id, a.accept, a.choice, (a.cells || []).slice().sort((x, y) => x - y).join('.'), (a.vaultIds || []).slice().sort((x, y) => x - y).join('.'), a.escort].join('|');
+  const actionKey = (a) => [a.type, a.cell, a.to, a.id, a.accept, a.choice].join('|');
 
   function renderResults() {
     $('az-treasure-wait').hidden = !model.treasureWait;
@@ -1275,9 +1186,16 @@
     const working = !settled();
     const rec = working ? null : recommendation();
     const r = solver.result;
-    const goal = r ? r.goal : st.mode === 'challenge' ? 'contract' : 'rainbows';
-    if (working) setHTML($('az-res-move'), `${SPIN}Working it out…`);
-    else $('az-res-move').textContent = rec ? rec.label : 'Nothing to decide here.';
+    const goal = 'rainbows';
+    // The board changed since this check: its advice was for the board
+    // before, so it isn't shown (report 304: a player took the dimmed move
+    // for the advice on the new board). Recheck gives the new advice.
+    $('az-res-eyebrow').textContent = stale ? 'The board changed' : 'Recommended';
+    // Always through setHTML, which skips what it wrote last: a headline
+    // written past it left a new check showing the old move.
+    if (stale) setHTML($('az-res-move'), 'Press Recheck for advice on this board');
+    else if (working) setHTML($('az-res-move'), `${SPIN}Working it out…`);
+    else setHTML($('az-res-move'), esc(rec ? rec.label : 'Nothing to decide here.'));
     $('az-do').hidden = !rec || stale;
     $('az-do').textContent = rec && rec.action.type === 'end' ? 'End the day here' : 'Do it here';
     $('az-next').hidden = !rec || stale;
@@ -1291,8 +1209,8 @@
       ? 'The board changed since this check. Recheck for advice on the board as it is now.'
       : `Read from your screenshot${flags.size ? `, with ${T.plural(flags.size, 'cell')} marked Check` : ''}.${unsureTools()} If anything on the board doesn’t match your game, fix it, then Recheck.`;
     let body = '';
-    if (working) body += `<p class="trainer-source">Each move below is played out from your board, with everything you can’t see re-rolled each time. The advice shows when they’re all done, so it won’t change.</p>`;
-    if (rec) {
+    if (working && !stale) body += `<p class="trainer-source">Each move below is played out from your board, with everything you can’t see re-rolled each time. The advice shows when they’re all done, so it won’t change.</p>`;
+    if (rec && !stale) {
       body += `<p class="trainer-source">${esc(rec.live ? `Checked by ${rec.rounds.toLocaleString()} playouts per option` : 'Instant pick from training')}</p>`;
       if (rec.why) body += `<p class="trainer-why">${esc(rec.why)}</p>`;
       if (rec.option) body += `<p class="trainer-why">${esc(expectText(goal, rec.option, st))}</p>`;
@@ -1306,12 +1224,13 @@
     const c = checking();
     const options = working ? c.moves : r ? r.options : [];
     const status = $('az-res-status');
-    if (working) status.textContent = `Playing out ${T.plural(c.moves.length, 'move')}, ${c.each.toLocaleString()} games each: ${c.played.toLocaleString()} of ${c.total.toLocaleString()} games played`;
+    if (stale) status.textContent = '';
+    else if (working) status.textContent = `Playing out ${T.plural(c.moves.length, 'move')}, ${c.each.toLocaleString()} games each: ${c.played.toLocaleString()} of ${c.total.toLocaleString()} games played`;
     else if (!r) status.textContent = 'Live check: starting…';
     else if (options.length <= 1) status.textContent = options.length ? 'Only one move here.' : 'Nothing to decide right now.';
     else status.textContent = r.done ? `Live check: ${r.rounds.toLocaleString()} playouts per option` : `Live check: ${r.rounds.toLocaleString()} playouts per option so far…`;
     const max = Math.max(0.01, ...options.map((o) => o.mean || 0));
-    const shown = options.length > 1 ? options : [];
+    const shown = options.length > 1 && !stale ? options : [];
     syncRows(
       $('az-res-list'),
       shown,
@@ -1350,8 +1269,8 @@
         li.querySelector('.solver-tag').hidden = !o.policy;
         const value = li.querySelector('.solver-value');
         value.textContent = fmtOption(goal, o, st);
-        value.title = goal === 'contract' ? 'Chance to pass the challenge, and contract points on average' : 'Expected Rainbows in the vault by the end of the run, with a 95% margin';
-        const width = goal === 'contract' ? 100 * o.pass : (100 * o.mean) / max;
+        value.title = 'Expected Rainbows in the vault by the end of the run, with a 95% margin';
+        const width = (100 * o.mean) / max;
         li.querySelector('.solver-meter span').style.width = `${Math.max(2, width).toFixed(1)}%`;
         const sub = li.querySelector('.solver-sub');
         let subText = '';
@@ -1366,14 +1285,12 @@
     );
     const top = options[0];
     const second = options[1];
-    const close = top && second && top.mean - second.mean < 1.96 * second.gapSe;
+    const close = top && second && top.mean - second.mean < Math.max(1.96 * second.gapSe, SWITCH_MIN);
     $('az-res-note').textContent = working || shown.length < 2
       ? ''
       : close
         ? 'The top moves are within the margin of error: either is fine.'
-        : goal === 'contract'
-          ? 'Each option is played out from your board with everything you can’t see re-rolled, and the trained strategy making every later choice. Ranked by the chance to pass the challenge, then by contract points.'
-          : 'Each option is played out from your board with everything you can’t see re-rolled, and the trained strategy making every later choice. Scores are Rainbows in the vault by the end of the run.';
+        : 'Each option is played out from your board with everything you can’t see re-rolled, and the trained strategy making every later choice. Scores are Rainbows in the vault by the end of the run.';
   }
 
   // What the player does after following the advice in their game.
@@ -1390,7 +1307,6 @@
         : 'Then update what changed, and ask again.';
       case 'office': return 'In your game, press it. Then paste a screenshot of what changed (or set it here under Make Your Decision), and ask again.';
       case 'choose': return 'Take it in your game, then ask again.';
-      case 'deliver': return 'Load exactly these inmates in your game’s delivery window, with that escort.';
       default: return 'Then update the board, and ask again.';
     }
   }
@@ -1405,7 +1321,6 @@
     else {
       if (applied.changed.length) html += `<p class="trainer-why">${applied.changed.length === 1 ? 'Cell' : 'Cells'} ${applied.changed.map(L).join(', ')} changed, marked Check. Set ${applied.changed.length === 1 ? 'it' : 'them'} to what your game shows.</p>`;
       if (applied.newDay && applied.step === 'patrol') html += `<p class="trainer-why">It's now day ${model.day}. The simulator rolled today's doors (${applied.doors.map(L).join(', ') || 'none'}); tick the ones your game offers.</p>`;
-      if (applied.step === 'window') html += '<p class="trainer-why">A delivery window opened: the contract is due.</p>';
       if (applied.step === 'choice') html += '<p class="trainer-why">A tool or gift is on offer: set the options your game shows.</p>';
       if (applied.step === 'event') html += "<p class=\"trainer-why\">The door held a special event: check its kind in your game.</p>";
       if (applied.office) html += '<p class="trainer-why">The warden is in the office. If your game shows the Instigate and Bestow buttons, pick “Instigate or Bestow” above, or paste a screenshot of them. Otherwise carry on with “Make Your Decision”.</p>';
@@ -1702,8 +1617,8 @@
   const GAME_LANGS = { en: 'English', ru: 'Russian', zh: 'Chinese' };
   const LANG_KEY = 'tartarus-sim:game-lang:v1';
   const LANG_NOTES = {
-    ru: 'Игра на русском языке. Анализатор обучен на английском клиенте: клетки, звери и редкость на поле читаются на любом языке, но двери дня, кнопки замены и поглощения, ваши инструменты, счётчик хроматических заключённых, предложения инструментов, цели и карты начала забега читаются по английскому тексту. Укажите их вручную (двери — в разделе «Which door to patrol»), а если экран не распознан, отправьте его кнопкой «Send this screenshot», чтобы анализатор научился читать русский клиент.',
-    zh: '游戏为中文客户端。分析器是基于英文客户端训练的：棋盘上的格子、野兽和稀有度在任何语言下都能识别，但当天的门、替换和吞噬按钮、你的刑具、彩色囚犯数量、刑具选择、本局目标和开局卡牌是按英文文字识别的。请手动设置这些内容（门在“Which door to patrol”中设置）；若某个画面未被识别，请点击“Send this screenshot”发送截图，帮助分析器学会识别中文客户端。',
+    ru: 'Игра на русском языке. Анализатор обучен на английском клиенте: клетки, звери и редкость на поле, а также двери дня (по номерам клеток), читаются на любом языке. Кнопки замены и поглощения, ваши инструменты, счётчик хроматических заключённых, предложения инструментов, цели и карты начала забега читаются по английскому тексту. Укажите их вручную, а если экран не распознан, отправьте его кнопкой «Send this screenshot», чтобы анализатор научился читать русский клиент.',
+    zh: '游戏为中文客户端。分析器是基于英文客户端训练的：棋盘上的格子、野兽和稀有度，以及当天的门（按格子编号），在任何语言下都能识别；但替换和吞噬按钮、你的刑具、彩色囚犯数量、刑具选择、本局目标和开局卡牌是按英文文字识别的。请手动设置这些内容；若某个画面未被识别，请点击“Send this screenshot”发送截图，帮助分析器学会识别中文客户端。',
   };
   let gameLang = 'en';
   try {
@@ -1712,9 +1627,16 @@
     // The default, then.
   }
   const langName = (code) => GAME_LANGS[code] || 'another language';
+  // Today's doors are read by their cell numbers in any language (since
+  // 20261017s), checked on real Chinese, Korean and Russian boards (c2); in
+  // others a letter can pass for a digit, so the player checks them.
+  const DOORS_READ = ['zh', 'ko', 'ru'];
   function langNote() {
     if (gameLang === 'en') return '';
-    return `Your game is in ${langName(gameLang)}. The reader learned on the English client: the board's cells, beasts and rarities read in any language, but today's doors, the Replace and Consume buttons, your instruments, the Chromatic count, instrument offers, objectives and start-of-run cards are read by their English text. Set those by hand (the doors under “Which door to patrol”), and when a screen isn't recognized, please send it with the button that comes up, so the reader can learn your language.${LANG_NOTES[gameLang] ? `\n\n${LANG_NOTES[gameLang]}` : ''}`;
+    const doors = DOORS_READ.includes(gameLang)
+      ? "the board's cells, beasts and rarities, and today's doors (by their cell numbers), read in any language"
+      : "the board's cells, beasts and rarities read in any language, and today's doors are read by their cell numbers, but not yet checked on boards in your language, so check them under “Which door to patrol”";
+    return `Your game is in ${langName(gameLang)}. The reader learned on the English client: ${doors}. The Replace and Consume buttons, your instruments, the Chromatic count, instrument offers, objectives and start-of-run cards are read by their English text. Set those by hand, and when a screen isn't recognized, please send it with the button that comes up, so the reader can learn your language.${LANG_NOTES[gameLang] ? `\n\n${LANG_NOTES[gameLang]}` : ''}`;
   }
   function renderLang() {
     const sel = $('az-game-lang');
@@ -1755,7 +1677,7 @@
     if (gameLang === 'en' || langBoardAsked || !image) return false;
     langBoardAsked = true;
     langMiss = { what: 'board', image, detail: 'a board, for its door cards and buttons', at: Date.now() };
-    toast(`Your game is in ${langName(gameLang)}: today's doors and the Replace and Consume buttons may not be read, so set them by hand. Sending this board's screenshot once helps the reader learn your language.`, 'ok', [{ id: 'lang-report', label: 'Send this screenshot', primary: true }]);
+    toast(`Your game is in ${langName(gameLang)}: ${DOORS_READ.includes(gameLang) ? '' : 'check today’s doors, and '}the Replace and Consume buttons may not be read, so set them by hand. Sending this board's screenshot once helps the reader learn your language.`, 'ok', [{ id: 'lang-report', label: 'Send this screenshot', primary: true }]);
     return true;
   }
   function sendLangMiss() {
@@ -1832,8 +1754,12 @@
       }
       reader.result = result;
       reader.reading = result.ok ? scanToModel(result, model) : null;
+      // The run's objective and its count, from the board's corner.
+      if (result.ok && result.objective) cornerObjective(reader.image, result.objective, reader.reading.model.day);
       scanStatus(result.ok ? `Read in ${(reader.ms / 1000).toFixed(1)} s.` : `${result.reason} Try a screenshot of the prison screen, with the whole board in view.`, !result.ok);
-      if (o.onRead) o.onRead(result.ok ? { ok: true, day: reader.reading.model.day, unsure: reader.reading.checks.size, ms: reader.ms } : { ok: false, reason: result.reason, ms: reader.ms });
+      // controls: the board's own door cards or decision row showed, which
+      // View Prison Status never does: no Warden's Treasure is open.
+      if (o.onRead) o.onRead(result.ok ? { ok: true, day: reader.reading.model.day, unsure: reader.reading.checks.size, ms: reader.ms, controls: !!((result.doors && result.doors.cells && result.doors.cells.length) || result.decision), statusView: !!result.statusView } : { ok: false, reason: result.reason, ms: reader.ms });
       if (o.quiet) {
         renderScan();
         return;
@@ -1850,7 +1776,9 @@
         // The reading becomes the board at once, and the advice follows. If
         // the reader got something wrong, the player fixes it and rechecks.
         const unsure = reader.reading.checks.size;
-        const behindTreasure = model.treasureWait;
+        // View Prison Status (its "Return to Selection"): the board behind
+        // the Treasure, even when the Treasure itself wasn't seen (report 325).
+        const behindTreasure = model.treasureWait || !!result.statusView;
         useScan(true);
         if (behindTreasure) {
           useTreasure('view');
@@ -1867,7 +1795,8 @@
     readerWorker();
     if (reader.worker) {
       const copy = imageData.data.slice().buffer;
-      reader.worker.postMessage({ id, width: imageData.width, height: imageData.height, buffer: copy }, [copy]);
+      // lang: the game's language, for its door cards (see TartarusScan.scan).
+      reader.worker.postMessage({ id, width: imageData.width, height: imageData.height, buffer: copy, lang: gameLang }, [copy]);
     } else scanHere(imageData, id, done);
   }
 
@@ -1956,18 +1885,117 @@
     });
   }
 
+  // The run's objective, printed in the board's corner ("Objective: Prison
+  // Walk", and its goal under it with the count so far, "0/4", or
+  // "Completed"), read by the text reader while the run's objective isn't
+  // known (the popup at its start was missed or misread: the user's Survival
+  // of the Fittest run, 2026-10-17, whose "objective" picture was the
+  // lobby), and once a day while its goal isn't met: the analyzer often
+  // first sees a run midway, and how many consumes or doors are left weighs
+  // an early consume for the instrument. One try at a time, three failures
+  // in a row a day.
+  const corner = { busy: false, tries: 0, day: 0, done: false };
+  async function readCornerObjective(source, box) {
+    const worker = await ocrWorker();
+    if (!worker) return { ok: false };
+    const [x0, y0, x1, y1] = box.map(Math.round);
+    const w = x1 - x0;
+    const h = y1 - y0;
+    if (w < 8 || h < 8) return { ok: false };
+    // Small text reads better enlarged.
+    const z = Math.max(1, Math.min(3, 600 / w));
+    const c = document.createElement('canvas');
+    c.width = Math.round(w * z);
+    c.height = Math.round(h * z);
+    c.getContext('2d').drawImage(source, x0, y0, w, h, 0, 0, c.width, c.height);
+    let text = '';
+    try {
+      text = (await worker.recognize(c)).data.text || '';
+    } catch (e) {
+      return { ok: false };
+    }
+    const letters = (t) => t.toLowerCase().replace(/[^a-z]/g, '');
+    // The title follows "Objective:" on its line, and a long one wraps onto
+    // the next ("Survival of the / Fittest").
+    const titled = text.split('\n').map(letters).filter(Boolean).map((l) => (l.includes('objective') ? l.slice(l.indexOf('objective') + 9) : l));
+    const tries = titled.concat(titled.slice(0, -1).map((l, i) => l + titled[i + 1])).filter((l) => l.length >= 4);
+    let best = null;
+    for (const id of Object.keys(T.OBJECTIVES)) {
+      if (id === 'other') continue;
+      const n = letters(T.OBJECTIVES[id].name);
+      for (const t of tries) {
+        const d = editDistance(t, n) / n.length;
+        if (!best || d < best.d) best = { id, d };
+      }
+    }
+    if (!best || best.d > 0.3) return { ok: false };
+    // The goal's count, "0/4" (letters can stick to it: "times0/2"), or
+    // "Completed". It can't pass the goal: a digit of the goal's own text
+    // can stick to it ("2 times1/2" with "times" missed reads "21/2"), so
+    // then only its last digit is the count, if that fits (d8).
+    const count = text.match(/(\d{1,2})\s*\/\s*(\d{1,2})/);
+    const need = count ? Number(count[2]) : null;
+    let have = count ? Number(count[1]) : null;
+    if (have !== null && have > need) have = have % 10 <= need ? have % 10 : null;
+    return { ok: true, id: best.id, name: T.OBJECTIVES[best.id].name, completed: /completed/i.test(text), have, need: have === null ? null : need };
+  }
+  // day: the reading's, as Auto Screenshot Mode applies it only after this.
+  function cornerObjective(source, box, day) {
+    // Each new day, the count again; a new run (the day goes back), all.
+    if (day !== corner.day) Object.assign(corner, { tries: 0, done: false });
+    corner.day = day;
+    const known = model.objective && model.objective !== 'other';
+    const counting = known && T.OBJECTIVES[model.objective] && T.OBJECTIVES[model.objective].need && !model.milestone;
+    if (corner.busy || corner.tries >= 3 || (known && (corner.done || !counting))) return;
+    corner.busy = true;
+    corner.tries += 1;
+    readCornerObjective(source, box).then((read) => {
+      corner.busy = false;
+      if (!read.ok) return;
+      corner.done = true;
+      corner.tries = 0;
+      // Advice already given for this board is given again for the board as
+      // updated: else every update left it stale, "the board changed" on
+      // every turn of a Prison Walk (report 351).
+      const wasFresh = fresh();
+      const targets = [model, reader.reading && reader.reading.model].filter(Boolean);
+      const wasKnown = model.objective && model.objective !== 'other';
+      // Not runObjective: that's the popup's, for the run's opening offer.
+      if (!wasKnown) for (const m of targets) m.objective = read.id;
+      // The count is this objective's: the higher of it and what's counted
+      // already (the run is under way).
+      const need = T.OBJECTIVES[read.id].need || 0;
+      let counted = false;
+      if (model.objective === read.id && need) {
+        const have = read.completed ? need : read.need === need ? read.have : null;
+        if (have !== null && have > model.walkTiles) {
+          for (const m of targets) {
+            m.walkTiles = Math.min(have, need);
+            if (have >= need) m.milestone = true;
+          }
+          counted = true;
+        }
+      }
+      if (wasKnown && !counted) return;
+      changed();
+      if (wasFresh) ask(true);
+      const so = counted ? ` (${read.completed || read.have >= need ? 'met' : `${read.have} of ${need} so far`})` : '';
+      toast(wasKnown ? `${read.name}: ${so.slice(2, -1)}, read from the board’s corner.` : `This run’s objective: ${read.name}${so}, read from the board’s corner. It’s set under Objective.`, 'ok');
+    }, () => {
+      corner.busy = false;
+    });
+  }
+
   // A card shown before the run (Cage Fight, Iron Law), besides its
   // objective. Iron Law makes the run 30 days long.
   let runStartEvent = null;
   function setStartEvent(id) {
     const card = T.START_EVENTS && T.START_EVENTS[id] ? T.START_EVENTS[id] : null;
     model.startEvent = card ? id : 'none';
-    if (model.mode !== 'challenge') {
-      const left = model.maxDays - model.day;
-      const days = card && card.days ? card.days : model.maxDays === 30 && id === 'none' ? T.DEFAULT_PARAMS.drillDays : model.maxDays;
-      model.maxDays = days;
-      model.day = clamp(days - left, 1, days);
-    }
+    const left = model.maxDays - model.day;
+    const days = card && card.days ? card.days : model.maxDays === 30 && id === 'none' ? T.DEFAULT_PARAMS.drillDays : model.maxDays;
+    model.maxDays = days;
+    model.day = clamp(days - left, 1, days);
     changed();
   }
 
@@ -2323,7 +2351,7 @@
       .then(() => {
         setTimeout(() => {
           try {
-            const result = window.TartarusScan.scan(imageData, window.TartarusScan.withPanelIcons(window.TARTARUS_SCAN, window.TARTARUS_PICK));
+            const result = window.TartarusScan.scan(imageData, window.TartarusScan.withPanelIcons(window.TARTARUS_SCAN, window.TARTARUS_PICK), { lang: gameLang });
             if (result.tools && result.tools.tools) for (const t of result.tools.tools) Object.assign(t, window.TARTARUS_SCAN.toolNames[t.id] || {});
             done(result);
           } catch (e) {
@@ -2344,7 +2372,7 @@
   }
 
   // The board the reading describes, built on the current settings (goal,
-  // food chain, run length, contracts), plus the cells to check.
+  // food chain, run length), plus the cells to check.
   // A devour's meal pick ("Select an Inmate to Consume"). The game darkens
   // all but the eater and its meals there, so rarities can't be read: the
   // board is the turn before (the one loaded here), with what this picture
@@ -2375,21 +2403,34 @@
     m.warden = warden;
     const was = base.cells[warden];
     const eater = r.cells[warden];
-    if (eater && eater.kind === 'inmate') m.cells[warden] = { kind: 'inmate', beast: eater.beast, tier: clamp(eater.tier, 0, TOP_TIER), ivory: !!(was && was.ivory), prey: was && was.kind === 'inmate' ? was.prey : null };
+    // Cells the chain has eaten show a padlock again. The meal pick darkens
+    // padlocks enough to read as an empty cell (reports 314 and 322), which
+    // the live board never has, so a cell that held an inmate and now reads
+    // empty was eaten too. Missing it took the chain for the day's first
+    // consume, and the advice said Replace.
+    let eaten = 0;
+    if (after || walked) {
+      r.cells.forEach((c, n) => {
+        if (n === T.OFFICE || n === warden || (c.kind !== 'locked' && c.kind !== 'empty') || m.cells[n].kind !== 'inmate') return;
+        m.cells[n] = { kind: 'sealed', event: null };
+        eaten += 1;
+      });
+    }
+    // Nothing eaten yet and the same beast in the warden's cell: the day's
+    // first meal pick, where the eater can't have changed. The meal screen's
+    // red light makes the reader's rarities unreliable there (report 337: an
+    // eater read as Supreme, and the advice turned from its consume to End),
+    // so the board before's eater and meals stand. A chain's eater rose and
+    // re-rolled its beast, so there the reading stands.
+    const sameBeast = !!was && was.kind === 'inmate' && !!eater && eater.kind === 'inmate' && was.beast === eater.beast;
+    const first = eaten === 0 && (walked || sameBeast);
+    if (first && was && was.kind === 'inmate') m.cells[warden] = JSON.parse(JSON.stringify(was));
+    else if (eater && eater.kind === 'inmate') m.cells[warden] = { kind: 'inmate', beast: eater.beast, tier: clamp(eater.tier, 0, TOP_TIER), ivory: !!(was && was.ivory), prey: was && was.kind === 'inmate' ? was.prey : null };
     else {
       checks.add(warden);
       notes.push('The eater in the warden’s cell wasn’t read: set it as it is now.');
     }
     const tier = m.cells[warden].kind === 'inmate' ? m.cells[warden].tier : 0;
-    // Cells the chain has eaten show a padlock again.
-    let eaten = 0;
-    if (after || walked) {
-      r.cells.forEach((c, n) => {
-        if (n === T.OFFICE || n === warden || c.kind !== 'locked' || m.cells[n].kind !== 'inmate') return;
-        m.cells[n] = { kind: 'sealed', event: null };
-        eaten += 1;
-      });
-    }
     // The meals on offer: the board before keeps its inmate when it fits;
     // otherwise the beast read here, at the eater's rarity. A scratched door
     // stays a door.
@@ -2400,10 +2441,18 @@
       m.cells[n] = { kind: 'inmate', beast: r.cells[n].beast || (c.kind === 'inmate' ? c.beast : 'mammoth'), tier, ivory: c.kind === 'inmate' ? !!c.ivory : false, prey: null };
       checks.add(n);
     }
-    const unchanged = walked || (was && was.kind === 'inmate' && eater && eater.kind === 'inmate' && was.beast === eater.beast && was.tier === eater.tier);
-    m.step = eaten === 0 && unchanged ? 'manage' : 'chain';
+    m.step = first ? 'manage' : 'chain';
     m.devourUsed = m.step === 'chain';
-    if (m.step === 'manage') m.swapUsed = false;
+    // The meal pick shows the meals and Cancel, never Replace. A chain taken
+    // for the day's first consume (report 323: the board before didn't hold
+    // the meal already eaten) has no Replace after Cancel either, so the
+    // advice weighs the meals against not consuming. No Hunt either (report
+    // 128: after a Cancel, the Prey mark advised couldn't be made).
+    if (m.step === 'manage') {
+      m.swapUsed = false;
+      m.noSwap = true;
+      m.noHunt = true;
+    }
     m.dest = [];
     m.chainArmed = false;
     const tools = (m.tools || []).map((id) => ({ id, sim: id, name: T.toolName(id), conf: 1 }));
@@ -2485,8 +2534,7 @@
     // Days until the riot set how much of the run is left.
     if (r.days) {
       const left = r.days.days;
-      if (m.mode === 'challenge') m.day = clamp(T.CHALLENGE_DAYS - left, 1, T.CHALLENGE_DAYS);
-      else if (left < m.maxDays) m.day = Math.max(1, m.maxDays - left);
+      if (left < m.maxDays) m.day = Math.max(1, m.maxDays - left);
       else if (left < 30) {
         // More days left than the run has: only Iron Law's 30-day run has
         // that many.
@@ -2506,19 +2554,25 @@
           m.cells[n] = { kind: 'nest', due: m.day + 2 };
           checks.add(n);
         } else {
-          // What the player knew of a door that's still locked stays: a
+          // A door whose rarity shows, as read: a "?" portrait, scratched by
+          // the Filthy Claws or not (report 243). A scratch stays while the
+          // door is locked, even if its slashes weren't read.
+          // What the player knew of a door that's still locked stays too: a
           // rarity shown (Crow Whispers, or the "Treasure" Hunt's "?"
-          // portrait, which reads as a plain lock) and the Hunt's Rare or
-          // better.
+          // portrait) and the Hunt's Rare or better.
           const was = base.cells[n];
           const event = c.event ? 'unknown' : null;
-          if (was && was.kind === 'revealed') m.cells[n] = { kind: 'revealed', tier: was.tier, event };
+          if (c.shown) {
+            m.cells[n] = { kind: c.shown.scratch || (was && was.kind === 'scratch') ? 'scratch' : 'revealed', tier: clamp(c.shown.tier, 0, TOP_TIER), event };
+            if (c.shown.conf < 0.6) checks.add(n);
+          } else if (was && (was.kind === 'revealed' || was.kind === 'scratch')) m.cells[n] = { kind: was.kind, tier: was.tier, event };
           else if (was && was.kind === 'sealed' && was.atLeast) m.cells[n] = { kind: 'sealed', event, atLeast: was.atLeast };
           else m.cells[n] = { kind: 'sealed', event };
         }
         if (c.conf < 0.6) checks.add(n);
       } else if (c.kind === 'inmate') {
-        m.cells[n] = { kind: 'inmate', beast: c.beast, tier: clamp(c.tier, 0, TOP_TIER), ivory: keptTusk(base, n, c.beast, clamp(c.tier, 0, TOP_TIER)), prey: null, event: c.event ? 'unknown' : null };
+        // The gold crosshair under a portrait: someone's Prey mark (report 352).
+        m.cells[n] = { kind: 'inmate', beast: c.beast, tier: clamp(c.tier, 0, TOP_TIER), ivory: keptTusk(base, n, c.beast, clamp(c.tier, 0, TOP_TIER)), prey: null, marked: !!c.prey, event: c.event ? 'unknown' : null };
         if (c.conf < 0.6 || c.ghost) checks.add(n);
       } else {
         m.cells[n] = { kind: 'empty' };
@@ -2537,7 +2591,22 @@
     if (r.doors && r.doors.cells.length) {
       m.step = 'patrol';
       m.dest = r.doors.cells.filter((n) => n !== m.warden);
-      if (r.doors.conf < 0.6) notes.push('Today’s doors were hard to read: check them.');
+      // The mouse pointer over a card's number hides its digit (report 318),
+      // unless the lit cells settled it (report 360). Unsettled, that door is
+      // marked Check: a guess, not a reading.
+      if (r.doors.hidden && r.doors.hidden.length && r.doors.lit) notes.push(`The mouse pointer covers the number on one card: the lit cells show it is cell ${L(r.doors.hidden[0])}.`);
+      else if (r.doors.hidden && r.doors.hidden.length) {
+        notes.push(`The mouse pointer covers the number on the card read as ${r.doors.hidden.map((n) => `cell ${L(n)}`).join(' and ')}: check that door.`);
+        r.doors.hidden.forEach((n) => checks.add(n));
+      }
+      else if (r.doors.conf < 0.6) notes.push('Today’s doors were hard to read: check them.');
+    } else if (!r.decision && !r.statusView && base.step === 'patrol' && (base.dest || []).length && m.day === base.day && m.warden === base.warden) {
+      // No door cards and no buttons, on the same day with the warden where
+      // it was: the cards haven't come back yet (report 334: pictured just
+      // after a Warden's Treasure closed), so the doors stay as they were.
+      m.step = 'patrol';
+      m.dest = base.dest.slice();
+      notes.push('No door cards or buttons showed (they may not have come back yet): today’s doors are kept from the board before.');
     } else {
       m.step = 'manage';
       m.dest = [];
@@ -2554,6 +2623,9 @@
     m.treasureSeen = false;
     m.noSwap = false;
     m.noDevour = false;
+    m.noHunt = false;
+    m.huntOnly = null;
+    m.officeOnly = null;
     // Without the cards (a picture taken as they come up), a board of the
     // same day with the warden in the same cell keeps what the board
     // before knew. And if the warden's inmate has changed since, today's
@@ -2564,6 +2636,7 @@
       m.devourUsed = !!base.devourUsed;
       m.noSwap = !!base.noSwap;
       m.noDevour = !!base.noDevour;
+      m.noHunt = !!base.noHunt;
       m.consumeOffered = !!base.consumeOffered;
       const was = base.cells[m.warden];
       const now = m.cells[m.warden];
@@ -2574,10 +2647,34 @@
         m.cells[m.warden].ivory = false; // a Tusk mark is used by the Replace
       }
     }
+    // “Select an Objective” with the warden on a Lion and the Blood-Stained
+    // Trap held: the Hunt's pick of its prey when only some cells are framed
+    // (report 352: the Lion's 3 meals), not the Sewer Ratway's, which frames
+    // all 15. Without the frames read, it's the Hunt's when it comes right
+    // after this visit's cards (the Ratway's follows its event card).
+    const here = m.cells[m.warden];
+    const trap = (m.tools || []).includes('trap') || ((r.tools && r.tools.tools) || []).some((t) => t.sim === 'trap');
+    const framed = r.decision && r.decision.ratway && Array.isArray(r.decision.framed) && r.decision.framed.length ? r.decision.framed : null;
+    const lionHere = !!here && here.kind === 'inmate' && here.beast === 'lion';
+    const huntPick = !!(r.decision && r.decision.ratway) && trap && lionHere && (framed ? framed.length < 14 : base.step === 'manage' && m.day === base.day && m.warden === base.warden);
     if (r.decision && r.decision.office) {
-      // The office's Instigate and Bestow cards.
+      // The office's Instigate and Bestow cards. The game can show just one
+      // (report 383: Bestow alone), when the reader tells them apart.
       m.step = 'office';
       m.dest = [];
+      const ins = r.decision.instigate;
+      const bes = r.decision.bestow;
+      if (ins === false && bes) m.officeOnly = 'bestow';
+      else if (bes === false && ins) m.officeOnly = 'instigate';
+    } else if (huntPick) {
+      // Only the Hunt is open now, on the framed cells.
+      m.step = 'manage';
+      m.dest = [];
+      m.swapUsed = false;
+      m.devourUsed = false;
+      m.noSwap = true;
+      m.noDevour = true;
+      if (framed) m.huntOnly = framed.slice();
     } else if (r.decision && r.decision.ratway) {
       // The Sewer Ratway's cell pick: a move to any cell but the office.
       m.step = 'ratway';
@@ -2589,6 +2686,12 @@
       m.devourUsed = false;
       m.noSwap = !r.decision.replace;
       m.noDevour = !r.decision.consume;
+      // A Hunt marks an inmate the Lion could consume, so it's offered only
+      // beside a Consume card (reports 353-355: a Hunt advised with only End
+      // showing). A reader that tells the Hunt card says so itself. And one
+      // gone stays gone for the visit (report 128: none after a meal pick's
+      // Cancel).
+      m.noHunt = ('hunt' in r.decision ? !r.decision.hunt : !r.decision.consume) || (sameVisit && !!base.noHunt);
       // A Consume card after today's swap is a consume on offer.
       m.consumeOffered = !!r.decision.consume;
     }
@@ -2609,18 +2712,24 @@
     const doorsDue = T.DEFAULT_PARAMS.destinations - m.tools.filter((id) => takers.includes(id)).length;
     if (m.step === 'patrol' && !officeNear && m.dest.length && m.dest.length < doorsDue) m.shortDays = [...new Set([...(m.shortDays || []), m.day])];
     if ((m.shortDays || []).length >= 2 && !m.tools.some((id) => takers.includes(id))) {
-      const hint = `${T.plural(m.shortDays.length, 'morning')} of this run offered a door short, as the Forged Key, Barbed Whip or Burning Stake do. If you hold one, set it under Torture Instrument${m.toolsLocked ? '' : ', then press These are right'}.`;
+      // Held as the Lost Ring of Keys, which takes no door: the Forged Key's
+      // icon, two keys on a ring (report 378), passes for it on the panel.
+      const hint = m.tools.includes('keys')
+        ? `${T.plural(m.shortDays.length, 'morning')} of this run offered a door short, which the Lost Ring of Keys doesn't do. The Forged Key does, and its icon looks like the Ring's: if you hold the Forged Key, set it under Torture Instrument in place of the Lost Ring of Keys${m.toolsLocked ? '' : ', then press These are right'}.`
+        : `${T.plural(m.shortDays.length, 'morning')} of this run offered a door short, as the Forged Key, Barbed Whip or Burning Stake do. If you hold one, set it under Torture Instrument${m.toolsLocked ? '' : ', then press These are right'}.`;
       if (m.toolsLocked || m.toolsToConfirm) notes.push(hint);
       else m.toolsToConfirm = hint;
     }
     if (tools.some((t) => t.conf < TOOL_SURE)) notes.push('Some instruments were hard to tell apart: check them under Torture Instrument.');
     const chromatic = r.chromatic ? r.chromatic.count : 0;
-    // Their beasts don't show in the slots; they only matter for a bounty.
+    // Their beasts don't show in the slots, and nothing depends on them.
     m.vault = new Array(chromatic).fill('wolf');
     const highest = Math.max(0, ...m.cells.filter((c) => c.kind === 'inmate').map((c) => c.tier));
-    // The start card's badge under the instrument panel (Opulence so far):
-    // the run has that card, in case its popup was missed.
-    if (r.badge && r.badge.id && T.START_EVENTS && T.START_EVENTS[r.badge.id] && m.startEvent !== r.badge.id) {
+    // The start card's badge under the instrument panel: the run has that
+    // card, in case its popup was missed. Only while no card is set: one the
+    // player or a popup set stands (report 358: a Cage Fight badge read as
+    // Tyranny undid the player's choice on every picture).
+    if (r.badge && r.badge.id && T.START_EVENTS && T.START_EVENTS[r.badge.id] && (!m.startEvent || m.startEvent === 'none')) {
       m.startEvent = r.badge.id;
       notes.push(`Start of run: ${T.START_EVENTS[r.badge.id].name}, from its badge under the instruments.`);
     }
@@ -2654,21 +2763,32 @@
       }
     });
     // The game shows Consume only when the warden's inmate has a meal. With
-    // none on the board as read, the advice can't weigh Consume (report
-    // 208): say why, and where to look. A second meal below Legendary is
-    // the likely one (the game offered one in report 206).
+    // none on the board as read, the advice can't weigh Consume: say why,
+    // and where to look.
     const w = m.warden;
     const noMeal = !!(r.decision && r.decision.consume) && w != null && m.cells[w] && m.cells[w].kind === 'inmate' && !hasTarget(final, w);
     if (noMeal) {
       checks.add(w);
-      const second = secondMealCells(final, w);
-      notes.push(second.length
-        ? `Your game offers Consume, but the ${T.describe(m.cells[w])} in ${L(w)} has only second meals here (${mealList(final, second)}), which the simulator allows only from Legendary up, or in a run with Cage Fight, so the advice can’t weigh Consume. If this run has Cage Fight, set it under Start of run.`
-        : `Your game offers Consume, but the board as read has no meal for the ${T.describe(m.cells[w])} in ${L(w)}, so the advice can’t weigh Consume: check it and the inmates it could eat.`);
+      notes.push(`Your game offers Consume, but the board as read has no meal for the ${T.describe(m.cells[w])} in ${L(w)}, so the advice can’t weigh Consume: check it and the inmates it could eat.`);
     }
     const odd = oddCells.filter((n) => !(noMeal && n === w)).length;
     if (odd) notes.push(odd === 1 ? '1 inmate’s jaws marker doesn’t fit what was read: check it and the inmates around.' : `${odd} inmates’ jaws markers don’t fit what was read: check them and the inmates around.`);
-    return { model: m, checks, notes, chromatic, tools, unsim };
+    // Cage Fight set for this run while the game's jaws fit better without
+    // it (report 311: a Legendary Wolf showed no jaws over a Rare Rat that
+    // Cage Fight would let it eat, and the advice had a Legendary Lion eat
+    // that Rat). No reader sets the card, so it was likely set by hand.
+    if (m.startEvent === 'cagefight' && oddCells.length) {
+      const plain = buildState(Object.assign({}, m, { step: 'manage', startEvent: 'none' })).st;
+      const known = r.cells.map((c, n) => n).filter((n) => r.cells[n].kind === 'inmate' && m.cells[n].kind === 'inmate' && r.cells[n].jaws !== null);
+      const fits = (state) => known.filter((n) => hasTarget(state, n) === !!r.cells[n].jaws).length;
+      const against = known.filter((n) => !r.cells[n].jaws && hasTarget(final, n) && !hasTarget(plain, n));
+      if (against.length && fits(plain) > fits(final)) {
+        const n = against[0];
+        const meal = T.devourOptions(final, n)[0].cell;
+        notes.push(`Cage Fight is set for this run, but your game shows no jaws on the ${T.describe(m.cells[n])} in ${L(n)}, which Cage Fight would let eat the ${T.describe(m.cells[meal])} in ${L(meal)}. If this run doesn’t have Cage Fight, set Start of run to No card.`);
+      }
+    }
+    return { model: m, checks, notes, chromatic, tools, unsim, huntPick };
   }
 
   function renderScan() {
@@ -2691,8 +2811,8 @@
       const nests = m.cells.filter((c) => c.kind === 'nest').length;
       list.push(`<li><b>Board</b> ${T.plural(inmates, 'inmate')}, ${T.plural(locked, 'locked cell')}${events ? `, ${T.plural(events, 'event')}` : ''}${nests ? `, ${T.plural(nests, 'rat nest')}` : ''}</li>`);
       list.push(`<li><b>Warden</b> ${r.warden ? (r.warden.cell === T.OFFICE ? 'in the office' : `cell ${L(r.warden.cell)}`) : 'not found'}</li>`);
-      list.push(`<li><b>Today</b> ${rd.chain ? `${m.step === 'chain' ? 'a consume chain picks its next meal, or Cancel stops it' : 'the day’s consume picks its meal'}: cell ${rd.chain.map(L).join(' or ')}` : m.step === 'patrol' ? `choose a door: ${m.dest.map(L).join(', ')}` : r.decision && r.decision.ratway ? 'the Sewer Ratway: pick any cell but the office' : r.decision && r.decision.office ? 'the office: Instigate or Bestow' : r.decision ? `your decision: ${[r.decision.replace && 'Replace', r.decision.consume && 'Consume', 'End'].filter(Boolean).join(', ')}` : 'no door cards, so after the patrol'}</li>`);
-      list.push(`<li><b>Riot</b> ${r.days ? `${T.plural(r.days.days, 'day')} away, so day ${m.day} of ${m.mode === 'challenge' ? T.CHALLENGE_DAYS : m.maxDays}` : 'not read'}</li>`);
+      list.push(`<li><b>Today</b> ${rd.chain ? `${m.step === 'chain' ? 'a consume chain picks its next meal, or Cancel stops it' : 'the day’s consume picks its meal'}: cell ${rd.chain.map(L).join(' or ')}` : m.step === 'patrol' ? `choose a door: ${m.dest.map(L).join(', ')}` : r.decision && r.decision.ratway ? (rd.huntPick ? `the Hunt: pick the Lion’s prey${(r.decision.framed || []).length ? `, cell ${r.decision.framed.map(L).join(', ')}` : ''}` : 'the Sewer Ratway: pick any cell but the office') : r.decision && r.decision.office ? (rd.model.officeOnly ? `the office: ${rd.model.officeOnly === 'bestow' ? 'Bestow' : 'Instigate'} only` : 'the office: Instigate or Bestow') : r.decision ? `your decision: ${[r.decision.replace && 'Replace', r.decision.consume && 'Consume', 'End'].filter(Boolean).join(', ')}` : 'no door cards, so after the patrol'}</li>`);
+      list.push(`<li><b>Riot</b> ${r.days ? `${T.plural(r.days.days, 'day')} away, so day ${m.day} of ${m.maxDays}` : 'not read'}</li>`);
       list.push(`<li><b>Instruments</b> ${rd.tools.length ? rd.tools.map((t) => esc(t.name || t.id) + (t.sim ? '' : ' (not simulated)')).join(', ') : 'none'}</li>`);
       list.push(`<li><b>Chromatic</b> ${T.plural(rd.chromatic, 'prisoner')}${r.chromatic ? '' : ' (panel not found)'}</li>`);
       if (rd.checks.size) list.push(`<li class="is-check"><b>Check</b> ${[...rd.checks].sort((a, b) => a - b).map(L).join(', ')}: unsure, marked Check on the board</li>`);
@@ -2739,6 +2859,10 @@
     const r = reader.result;
     const rd = reader.reading;
     const lines = [`Reader ${SCRIPT_QUERY.replace(/^\?v=/, '') || 'local'}, ${reader.follow ? 'an Auto Screenshot Mode picture' : 'a screenshot'} of ${reader.image.width}×${reader.image.height}, read in ${(reader.ms / 1000).toFixed(1)} s.`];
+    // The Warden's Treasure isn't read from a picture: during it, the picture
+    // is a board, from before it or seen behind it (reports 349, 363: taken
+    // for a board read wrong).
+    if (model.step === 'choice' && model.choice.kind === 'gift') lines.push(`The Warden’s Treasure is open (from the game’s log); this picture is ${model.treasureSeen ? 'the board seen behind it' : 'the last board before it'}. Its gifts aren’t read from a picture.`);
     if (!r.ok || !rd) {
       lines.push(`Not read: ${r.reason || 'no result'}`);
       return lines.join('\n');
@@ -2750,10 +2874,12 @@
       : r.doors && r.doors.cells.length
         ? `doors ${r.doors.cells.map(L).join(', ')}${sure(r.doors)}`
         : r.decision
-          ? `buttons: ${r.decision.office ? 'Instigate, Bestow' : [r.decision.replace && 'Replace', r.decision.consume && 'Consume', 'End'].filter(Boolean).join(', ')}`
+          ? r.decision.ratway
+            ? (rd.huntPick ? `the Hunt’s pick of its prey${(r.decision.framed || []).length ? `: ${r.decision.framed.map(L).join(', ')}` : ''}` : 'the Sewer Ratway’s pick of a cell')
+            : `buttons: ${r.decision.office ? [r.decision.instigate !== false && 'Instigate', r.decision.bestow !== false && 'Bestow'].filter(Boolean).join(', ') : [r.decision.replace && 'Replace', r.decision.consume && 'Consume', 'End'].filter(Boolean).join(', ')}`
           : 'no doors or buttons';
-    lines.push(`Day ${m.day} of ${m.mode === 'challenge' ? T.CHALLENGE_DAYS : m.maxDays}${r.days ? `, ${r.days.days} days to the riot${sure(r.days)}` : ', riot not read'}; warden ${r.warden ? L(r.warden.cell) + sure(r.warden) : 'not found'}; ${today}.`);
-    lines.push(`Cells (tiers 0 Normal to 4 Supreme, ? unsure): ${r.cells.filter((c) => c.n !== T.OFFICE).map((c) => `${L(c.n)} ${cellText(c)}${c.jaws ? ' jaws' : ''}${c.ghost ? ' faded' : ''}${sure(c)}`).join(', ')}.`);
+    lines.push(`Day ${m.day} of ${m.maxDays}${r.days ? `, ${r.days.days} days to the riot${sure(r.days)}` : ', riot not read'}; warden ${r.warden ? L(r.warden.cell) + sure(r.warden) : 'not found'}; ${today}.`);
+    lines.push(`Cells (tiers 0 Normal to 4 Supreme, ? unsure): ${r.cells.filter((c) => c.n !== T.OFFICE).map((c) => `${L(c.n)} ${cellText(c)}${c.jaws ? ' jaws' : ''}${c.prey ? ' prey' : ''}${c.ghost ? ' faded' : ''}${sure(c)}`).join(', ')}.`);
     const icons = r.tools && r.tools.tools ? r.tools.tools : [];
     lines.push(`Instruments read: ${icons.length ? icons.map((t) => `${t.name || t.id} ${Math.round(100 * t.conf)}%`).join(', ') : 'none'}; used: ${rd.tools.length ? rd.tools.map((t) => `${t.name || t.id}${t.kept ? ' (kept)' : ''}`).join(', ') : 'none'}.`);
     lines.push(`Chromatic ${rd.chromatic}${r.chromatic ? '' : ' (panel not found)'}; objective ${(T.OBJECTIVES[model.objective] || { name: model.objective || 'none' }).name}${T.START_EVENTS && T.START_EVENTS[model.startEvent] ? `; start card ${T.START_EVENTS[model.startEvent].name}` : ''}.`);
@@ -2917,14 +3043,8 @@
     $('az-warden').addEventListener('click', () => setWarden(selected));
     $('az-door').addEventListener('click', () => toggleDoor(selected));
 
-    segment('az-mode', (v) => {
-      model.mode = v;
-      if (v === 'challenge') model.day = Math.min(model.day, T.CHALLENGE_DAYS);
-      if (v !== 'challenge' && model.step === 'window') model.step = 'manage';
-      changed();
-    });
     $('az-riot').addEventListener('change', (e) => {
-      const max = model.mode === 'challenge' ? T.CHALLENGE_DAYS : clamp(toInt(model.maxDays, 20), 5, 60);
+      const max = clamp(toInt(model.maxDays, 20), 5, 60);
       model.day = clamp(max - toInt(e.target.value, max - model.day), 1, max);
       changed();
     });
@@ -2986,10 +3106,6 @@
       model.choice = Object.assign({}, model.choice, { options: options.filter(Boolean) });
       changed();
     });
-    segment('az-window-kind', (v) => {
-      model.windowKind = v;
-      changed();
-    });
     $('az-armed').addEventListener('change', (e) => {
       model.chainArmed = e.target.checked;
       changed();
@@ -3046,28 +3162,6 @@
       model.vault = model.vault.filter((_, i) => i !== Number(b.dataset.unvault));
       changed();
     });
-    $('az-vouchers').addEventListener('change', (e) => {
-      model.ch.vouchers = clamp(toInt(e.target.value, T.START_VOUCHERS), 0, T.START_VOUCHERS);
-      changed();
-    });
-    $('az-contracts').addEventListener('change', (e) => {
-      const c = e.target.closest('[data-contract]');
-      if (c) model.ch.contracts[Number(c.dataset.contract)] = c.value;
-      const p = e.target.closest('[data-points]');
-      if (p) model.ch.points[Number(p.dataset.points)] = clamp(toInt(p.value, 0), 0, 999);
-      if (e.target.id === 'az-bounty') model.ch.bounty = e.target.value;
-      changed();
-    });
-    $('az-contracts').addEventListener('click', (e) => {
-      const b = e.target.closest('[data-status] button[data-v]');
-      if (!b || b.disabled) return;
-      const slot = Number(b.closest('[data-status]').dataset.status);
-      model.ch.status[slot] = b.dataset.v;
-      // Contracts settle in order.
-      if (slot === 0 && b.dataset.v === 'pending') model.ch.status[1] = 'pending';
-      changed();
-    });
-
     $('az-go').addEventListener('click', () => ask());
     $('az-do').addEventListener('click', () => {
       const rec = fresh() ? recommendation() : null;

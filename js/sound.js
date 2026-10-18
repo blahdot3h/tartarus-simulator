@@ -115,10 +115,6 @@
       tone(c, { f: 784, decay: 0.8, peak: 0.04 });
       tone(c, { f: 1176, decay: 0.5, peak: 0.025 });
     },
-    deliver(c) {
-      noise(c, { decay: 0.5, peak: 0.12, freq: 700 });
-      [294, 370, 440].forEach((f, i) => tone(c, { f, at: 0.1 + i * 0.1, type: 'triangle', decay: 0.3, peak: 0.08 }));
-    },
     tool(c) {
       tone(c, { f: 880, decay: 0.12, peak: 0.06, type: 'triangle' });
       tone(c, { f: 1320, at: 0.06, decay: 0.2, peak: 0.05, type: 'triangle' });

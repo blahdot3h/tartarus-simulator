@@ -34,70 +34,95 @@ At every decision the strategy scores each legal move from what the player can s
 - **Devour.** It takes the first meal with the highest expected value. That value comes from an exact calculation of the chain that follows, including tools such as the Barbed Collar's +1 on chained bites. After each bite the player picks the next meal or stops the chain (the game's Cancel): the calculation and the strategy take the best meal each time, and stop when no meal is worth eating (`stopMargin`).
 - **The office.** A destination like any other. There it compares Bestow (1 random inmate +1 tier, worth the average raise) with Instigate (events behind 2 locked doors, worth an average event each, halved by `wInstigate` since a patrol still has to reach them).
 - **Swap.** It swaps the warden's inmate when it's at or below a tier threshold. A day has a swap or a devour, not both, so when a devour is on offer it swaps only if the swap is worth more than the best devour. With the Gaoler's Execution Axe, the 2 doors a higher roll opens count toward the swap's value.
-- **Events.** It accepts Chain reactions, Ravenous Appetite, High-Risk Convict and Crow Whispers, and Behind Closed Doors unless the inmate is already a Supreme. It accepts an Execution when the executioner gains more than it removes. Events show only once the warden has walked past their door: a door not yet passed counts as hiding one 5% of the time, and an event whose kind isn't known counts as each kind equally. A door whose rarity shows (Crow Whispers, a scratch, the Scales) is valued at that rarity.
-- **Instruments and gifts.** An instrument is picked by what it adds to the ones already held, from the measured sets in `js/tool-combos.js` (see below); without them, by a ranking measured by the lab. The contract challenge keeps its own ranking. Gifts are scored on the spot.
+- **Events.** It accepts Chain reactions, Ravenous Appetite, High-Risk Convict and Crow Whispers, and Behind Closed Doors unless the inmate is already a Supreme. It accepts an Execution when the executioner gains more than it removes. Events show as soon as they appear, so a locked door is never valued for a hidden one. An event whose kind isn't known counts as each kind equally. A door whose rarity shows (Crow Whispers, a scratch, the Scales) is valued at that rarity.
+- **Instruments and gifts.** An instrument is picked by what it adds to the ones already held, from the measured sets in `js/tool-combos.js` (see below); without them, by a ranking measured by the lab. Gifts are scored on the spot.
 
 The in-game Trainer shows this strategy's pick right away. It then plays each candidate move out hundreds of times with the strategy, re-rolling everything the player can't see each time. It keeps the strategy's pick unless the playouts find a clearly better move. Each move the player makes is graded against those playouts.
 
-The strategy has three tuned profiles, chosen by the run's settings: drills with rewards on (the default), drills with no tools, and the contract challenge. `train` refines the two drill profiles on a finer grid around their current weights, re-centered each round. It then scores the old and new weights on a separate set of 1,000,000 fresh prisons, so the before/after comparison is fair.
+The strategy has two tuned profiles, chosen by the run's settings: drills with rewards on (the default) and drills with no tools. `train` refines them on a finer grid around their current weights, re-centered each round. It then scores the old and new weights on a separate set of 1,000,000 fresh prisons, so the before/after comparison is fair.
 
 ## The strategy guide's data
 
-`strategy.html` reads `js/guide-data.js`, which the `guide` mode generates. It plays the live game's food chain, where each beast has one meal (Mammoth eats Lion, Lion eats Wolf, Wolf eats Rat, Rat eats Mammoth). `guide` tunes the strategy (unless `--no-tune`), ranks tools and gifts, measures each habit, and plays the headline. 100,000 runs per measurement keep every margin under ±0.01 Rainbows, which is the target:
+`strategy.html` reads `js/guide-data.js`, which the `guide` mode generates. It plays the live game's food chain, where each beast has one meal (Mammoth eats Lion, Lion eats Wolf, Wolf eats Rat, Rat eats Mammoth). `guide` tunes the strategy (unless `--no-tune`), ranks tools and gifts, measures each habit, and plays the headline. For now the target is ±0.1 Rainbows a measurement (the user, 2026-10-17: "just do enough tests to have 0.1 rainbows of certainty for now"), which 2,000 runs a measurement meet:
 
 ```
-node tools/strategy-sim.js guide --no-tune --games 100000 --side 100000 --habit-games 100000 --compare 100000
+node tools/strategy-sim.js guide --no-tune --games 2000 --side 2000 --habit-games 2000 --compare 100000
 ```
 
-The latest run (2026-10-15, evening, with the starting pick of 3 instruments) took 4,200,000 runs in 5.9 minutes. Its full numbers are in `results/guide-data.json`.
+For ±0.01, use 100,000 runs a measurement (`--games 100000 --side 100000 --habit-games 100000 --compare 100000`). The latest run (2026-10-18, with every Usurpation placing the next on a free cell and the Muzzle counting the block before its consume) took 602,000 runs in 5.3 minutes on 1 thread, most of them the strategy comparison's 100,000 runs a player. Its full numbers are in `results/guide-data.json`.
 
-## The contract challenge
+## The contract challenge (removed)
 
-Three modes play full 12-day contract challenges, split evenly across the three starts:
-
-```
-node tools/strategy-sim.js challenge --games 300000 --variants ";reserve=1;keep1=0,keep2=0"   # compare habits against the challenge profile
-node tools/strategy-sim.js ctune     --games 100000 --rounds 2    # tune the challenge profile
-node tools/strategy-sim.js cguide    --games 2000000              # the strategy guide's challenge data
-```
-
-The challenge is scored on **passing first, then contract points**. A pass counts as 1,000 points, so 1% of pass chance is worth 10 points. `--variants` takes `;`-separated lists of `key=value` changes, plus `toolFirst=id` and `toolRank=a|b|c`.
-
-How the strategy plays the challenge (`js/solver.js`, profiles `loop-challenge` and `challenge`):
-- **Convoys.** It searches every way to load the open contract. Inmates are grouped by tier and beast, so the search is exact and takes about 0.02 ms. On the first two contracts, a convoy's points are weighed against what its inmates are worth kept on the block (`keep1`, `keep2`). A heavy escort is only allowed if 3 vouchers would remain (`reserve`), and it never spends the heavy contract's last voucher. When contract 1 was missed, contract 2 becomes a must and any escort that leaves a voucher will do. The heavy contract ends the run, so it takes the most points.
-- **Getting ready.** In the last `needDays` days before a delivery window, moves are also scored by how close they bring the block to meeting that contract (`wNeed`). The weight is higher when the contract is a must (`needCrit`).
-- **Everything else** uses the same scoring as drills, with weights tuned for the challenge.
-
-The in-game Trainer compares the strategy's convoy with the most points, the most points by light escort, the cheapest qualifying cargo, skipping, and whatever convoy the player is loading.
-
-### Challenge results (2026-10-12, single-meal chain)
-
-The tuning ran `ctune` at 100,000 runs per test for 2 rounds: 16.3 million runs in 21.7 minutes. A refit tool order and the cargo setting were then checked on fresh seeds. The guide data comes from `cguide`: 6.5 million runs in 9.7 minutes on the seed `CGUIDE`, with 2,000,000 runs for the trained strategy and 300,000 for each variant (margins about ±0.1% of pass rate).
-
-| Habit | Pass | Points per run |
-| --- | --- | --- |
-| **The trained strategy** | **94.45%** | **52.3** |
-| Sending the most points every time, even the heavy contract's last voucher | 19.8% | 60.5 |
-| Sending the most points, keeping 1 voucher | 69.8% | 60.4 |
-| The most points, by light escort only | 88.2% | 63.7 |
-| Sending some Rares on the first two | 90.8% | 64.2 |
-| Cheap cargo, but heavy escorts allowed on the first two | 92.6% | 52.8 |
-| Ignoring the next contract while playing | 92.1% | 51.0 |
-| Playing with the drill weights (convoys unchanged) | 92.7% | 50.6 |
-| Shipping the heavy contract as soon as it qualifies | 94.5% | 51.2 |
-| Shipping the heavy contract early once its escort is full | 94.5% | 52.3 |
-
-- **Starts.** Supply 96.5% (52.5 points), Lean 90.1% (50.0) and Rat-breeding 96.8% (54.2).
-- **Contracts most often missed.** Elite muster (delivered 61.9%), Work gang (80.6%) and Kin escort (85.2%). The heavy contract ships in 95.8% of runs, for 37.5 points on average.
-- **Runs that still fail.** 4.2% never reach a Supreme or Rainbow by day 12, and 1.3% ship the heavy contract but miss both early ones.
-- **Refit tools.** Putting Hangman's Noose first was clearly best: 94.4% against 93.5% with the drill's order, 300,000 runs each. The final order was Rope, Skewer, Burning Stake, Avenger's Casket, Ring of Keys, Iron Box, Muzzle, Saw (measured before the Stake became the Searing Branding Iron).
-- **Cargo.** Sending what qualifies plus spare Normals (`keep` 1) matched the tuner's strict minimum (1.5) on pass rate and added 1.1 points, on 1,000,000 fresh runs.
-
-The two-meal chain's challenge profile had a one-round tune (5.2 million runs, 7.5 minutes). It passes 97.2% with 59.3 points on fresh prisons. On that chain, richer cargo on contract 2 pays (`keep2` 0.25).
+The Chinese sim's 12-day contract challenge (contracts, vouchers, escorts and convoys) was removed from the simulator, the analyzer, the strategy guide and the lab on 2026-10-17, at the user's word: it isn't in the live game. The `challenge`, `ctune` and `cguide` commands went with it. Sections below still show its numbers as they were measured; their files are in the git history.
 
 ## Results
 
 The Chinese sim's two-meal food chain (Mammoth also eats Wolf, Lion also eats Rat) was confirmed not to be in the live game on 2026-10-15, so it was removed from the simulator and the lab. The older sections below still show the two-meal numbers measured at the time; their files are in the git history.
+
+### Usurpations in a row, and the Muzzle before its consume (2026-10-18)
+
+Two rules from the user, in the engine since 20261018d:
+- **Usurpation:** each Usurpation card now puts the next one on a random free cell, seen at once: a locked door with no event, or an inmate's open cell with none (the cells Instigate can use). Before, only Usurpation I's card placed the next, and only behind a door. The strategy weighs the Usurpation cells with their own weight, `wUsurp` (0.5).
+- **Agonizing Muzzle:** its 2 extra tiers need 4 or fewer inmates on the block before the consume, its meal included (before: after it).
+
+The instrument pairs were measured again from scratch (`combos --max 2 --margin 0.1`, on 1 thread: 1,988,000 runs in 43.2 minutes, ±0.07 at worst). The pair lab's no-instrument baseline is 1.77 (was 1.37).
+- **Best pairs:** the Maiden with the Noose is still the best pair (9.12), then the Maiden with the Scapegoat's Guillotine (6.09), and the Noose with the Trap (5.02) or the Maul (4.98).
+- **The Muzzle's pairs** fell by 0.35 to 0.47 while the baseline rose by 0.39: with the Maul 4.43 (was 4.77), the Crown 4.37 (was 4.84) and the Claws 4.37 (was 4.73).
+- **Clashes:** the Scapegoat's Guillotine with the Trap (−1.20) and the Noose (−1.06), and the Maul with the Trap (−0.92).
+
+Then the guide, with the same settings (602,000 runs in 5.3 minutes on 1 thread):
+- **Headline:** **4.66** Rainbows a run with rewards on (±0.10, was 4.41), and 1.80 with no instruments (±0.01 on 100,000 runs, was 1.39). The gain is the strategy's: it goes for the seen Usurpation cells. Played simply, no instruments gives 0.86 (was 0.83), and random play is unchanged (0.06). With the next Usurpation only behind doors (20261018b), the same runs gave 4.76 and 1.94.
+- **Instruments:** the Trap (3.60), the Maul (3.56) and the Crown (3.45) still lead, then the Noose (3.27), the Claws (3.05) and Kin's Coin (2.77). Every instrument is above its old number but the Muzzle, down to 2.40 (was 2.72), from 5th to 11th; the drill ranking follows. Below no instrument (1.85 in this table): the Iron Box (1.11), the Forged Key (1.35), the Execution Axe (1.62), the Short-Chained Shackles (1.75), the Searing Branding Iron (1.78) and the Iron Pestle (1.80), with the Lost Ring of Keys, the Warden's Scales and the Barbed Whip (1.87 to 1.88) level with it inside the margin.
+- **Warden's Treasure:** Crimson Vintage 4.47, Thumb Ring 4.20, Horn 3.93 and Brand 3.87, against 4.66 judged on the spot.
+- **Habits:** preferring short walks (1.60), always accepting Executions (1.64), never replacing (1.64) and always taking Bestow (1.65) cost the most, against the strategy's 1.85.
+
+The strategy's other weights weren't tuned again.
+
+### Second meals at every rarity (2026-10-17, night)
+
+The user, as players' games kept offering them: "fix it then and adjust the sim data accordingly". Mammoths now eat Wolves and Lions eat Rats at every rarity, still at the eater's rarity (`doubleEatTier` 0, was 3, Legendary). The evidence:
+- **First meals:** a Rare Lion's meal pick offered two Rare Rats (report 206). Consume was offered to a Normal Mammoth over a Normal Wolf (208), and to a Rare Mammoth over Rare Wolves (306).
+- **Mid-chain:** "Chain Consume" picks offered a Magic Lion a Magic Rat (322), and a Rare Lion a Rare Rat (323).
+- **Jaws markers:** on players' boards, 120 of 123 inmates below Legendary whose only food was such a meal showed jaws.
+
+The guide was measured again with it, with the same settings (602,000 runs in 5.1 minutes on 1 thread):
+- **Headline:** **4.41** Rainbows a run with rewards on (±0.09, was 4.08), and 1.39 with no instruments (±0.005, was 1.26).
+- **Instruments:** chains go on more often, so the instruments built on consumes gain the most.
+  - The Elephant-Foot Maul reaches 3.21 (was 2.46): a Mammoth's Maul now reaches higher-rarity Wolves.
+  - The Blood-Stained Trap reaches 3.21 (was 2.64): its Lion can mark Rats too.
+  - The Agonizing Muzzle reaches 2.72 (was 2.06), and the Barbed Collar and the Rusty Saw gain too.
+  - The Executioner's Blacklist dipped (1.82, was 1.93), inside the margin.
+- **Order:** the Maul, the Trap, the Crown (3.17), the Noose (2.75), the Muzzle (2.72) and the Claws (2.69); the drill ranking follows. Below no instrument (1.39): the Iron Box (0.85), the Forged Key (1.20) and the Execution Axe (1.26).
+- **Warden's Treasure:** Crimson Vintage 4.13, Thumb Ring 3.97, Horn 3.71 and Brand 3.63, against 4.41 judged on the spot.
+- **Habits:** never replacing (1.26), always accepting Executions (1.22), always taking Instigate (1.28), preferring short walks (1.29) and always taking Bestow (1.30) cost the most. Replacing Normals only measured 1.40, level with the strategy's 1.39 inside the margin.
+
+The instrument pairs were measured again (`combos --max 2 --margin 0.1`, on 1 thread: 1,988,000 runs in 42.4 minutes, ±0.06 at worst). The pair lab's no-instrument baseline is 1.37.
+- **Best pairs:** the Maiden with the Noose is still the best pair (9.07). Then the Maiden with the Scapegoat's Guillotine (5.98), and the Muzzle with the Crown (4.84), the Maul (4.77) and the Claws (4.73).
+- **Clashes:** the Scapegoat's Guillotine with the Trap (−1.20), the Noose and the Crown (−1.00 each), and the Iron Box with the Maul and the Muzzle (−0.98 each).
+
+The strategy's weights were tuned under the old rule and weren't tuned again.
+
+### Extra Portion (2026-10-17, night)
+
+A player's report (#313): "randomly select up to 3 inmates and increase their rarity by 1 tier". It's the 11th event in the pool (`portion`), as likely as each of the others, and the strategy always accepts it. Its card hasn't been seen, so a Supreme it picks becoming a Rainbow is the simulator's reading.
+
+The guide was measured again with it, with the same settings (602,000 runs in 4.9 minutes on 1 thread): **4.08** Rainbows a run with rewards on (±0.09, was 4.01), and 1.26 with no instruments (±0.005 on 100,000 runs, was 1.17). Every instrument gained between 0.01 and 0.16. Instruments less than about 0.1 apart traded places: the Noose now comes before the Trap, the Claws before the Maul, and the Ravenous Chains before the Blacklist and the Avenger's Casket. The drill ranking follows. The instrument pairs weren't measured again: their numbers below are from before Extra Portion.
+
+### Measured again with events at random, to ±0.1 (2026-10-17, night)
+
+With events appearing at random (next section), the instrument pairs were measured again from scratch on 4 threads, and the guide on 1 while the user played, to the user's target for now: "just do enough tests to have 0.1 rainbows of certainty for now". The contract challenge was removed at the same time (above). Without it, the code plays 3,000 seeded runs with fixed instruments and 2,000 with rewards on move for move as before.
+
+- **Headline, rewards on** (`guide --no-tune --games 2000 --side 2000 --habit-games 2000 --compare 100000`, 602,000 runs in 4.8 minutes): **4.01** Rainbows a run (±0.08), against 3.47 under the old rule. 98.3% of runs vault one, the first around day 9, with 8.9 Replaces and 5.5 consumes a run. With no instruments, 1.169 (±0.005 on 100,000 runs; was 0.896). The events make the difference: 72% of runs now start with one, and about 0.18 more appear a day.
+- **Instruments alone** (±0.04 to ±0.07): Iron Crown of the Prison King 2.99, Blood-Stained Trap 2.56, Hangman's Noose 2.50, Elephant-Foot Maul 2.40, Filthy Claws 2.38, Scapegoat's Guillotine 2.37, Kin's Coin of Fate 2.30, Severed Iron Maiden 2.24, Long-Chained Shackles 2.01, Agonizing Muzzle 1.99, Executioner's Blacklist 1.92. Worse than none (1.19): the Squirming Iron Box (0.63), the Forged Key (0.97) and the Gaoler's Execution Axe (1.11). The Short-Chained Shackles (1.15), the Searing Branding Iron (1.17) and the Iron Pestle (1.18) are level with none within the margin. The drill ranking (`toolRank`) follows this order. Instruments less than about 0.1 apart can trade places at this precision: the Maul now comes before the Claws, and Kin's Coin before the Maiden.
+- **Pairs** (`combos --max 2 --margin 0.1`, nothing carried over): 497 sets of up to 2 instruments, 4,000 runs each (±0.06 at worst), 1,988,000 runs in 11.8 minutes. The pair lab's no-instrument baseline is 1.19.
+  - The Maiden with the Noose is still the best pair, at 8.92 Rainbows a run (was 9.27), 5.37 beyond its parts. Then the Maiden with the Scapegoat's Guillotine (5.88), the Crown with the Muzzle (4.41), the Crown with the Claws (4.27), the Crown with the Trap (4.23), the Noose with Kin's Coin (4.21) and the Iron Box with the Rat Heads (4.20).
+  - Clashes: the Scapegoat's Guillotine with the Noose and the Crown (−0.99 each), the Trap (−0.94) and Kin's Coin (−0.85), and the Iron Box with the Claws (−0.65).
+  - The Trap does best with the Crown (4.23), the Noose (4.02) and the Claws (3.56); the Claws with the Crown (4.27), the Maul (3.69) and the Muzzle (3.65).
+  - The best second instrument differs from the single ranking for 10 of the 31.
+- **Habits** (no instruments, ±0.04): never replacing (1.01), always accepting Executions (1.02), always taking Instigate (1.08) and preferring short walks (1.09) cost the most, against 1.19 for the strategy. Always taking Bestow (1.13), replacing Normals only (1.13) and waiting for bigger chains with the large threshold (1.14) cost a little; the others are within 0.04 of the strategy.
+- **Warden's Treasure:** judging each gift on the spot (4.01) beats always taking the same one: Crimson Vintage 3.76, Three-Headed Thumb Ring 3.45, Brass Horn of Strife 3.23, Brand of Original Sin 3.22.
+- **Strategy comparison** (100,000 runs a player): with no instruments, random moves vault 0.043 a run, a simple player 0.649 and the strategy 1.169. With rewards on, 0.243, 1.398 and the headline's 4.01.
+- **The strategy page's chain table** now scales its cut-offs with the runs: the lab keeps the cases with at least 1 consume per 100 runs (and at least 100), and the page shows those with 1 per 20 runs below Legendary. They were fixed at 1,000 and 5,000 consumes, which only 100,000 runs reach: a 2,000-run guide kept 3 cases, and keeps 23 now.
 
 ### Events appear at random, seen at once (2026-10-17, evening)
 
@@ -111,7 +136,7 @@ Players' boards agree with the user (147,602 screenshot boards in 5,288 games, i
 
 So now (`spawnEvent`): a run starts with one event behind a random locked door at 72% (`eventStartChance`). Then a new one appears behind a random locked door without one (and not a rat nest) at 5% each morning from day 2 (`eventMorningChance`), 9% after the patrol's move (`eventWalkChance`), and 4% after a Consume (once its chain is over), Replace, Hunt or event choice (`eventActionChance`). These are the measured rates less the 15% of misreads, in whole percent. Every event shows at once. Walking past a door reveals nothing, an emptied cell that seals again gets no roll of its own, and an event a save kept hidden shows on loading. The strategy no longer values a door the warden hasn't passed for a hidden event, and its playouts no longer re-roll such events.
 
-On 300 runs played by the strategy: 71% start with an event, and 0.18 new events appear a day. The numbers in the sections below were measured under the old rule; the lab needs measuring again.
+On 300 runs played by the strategy: 71% start with an event, and 0.18 new events appear a day. The sections below were measured under the old rule; the section above has the lab's numbers under this one.
 
 ### Measured again with the vault cap and Instigate (2026-10-17)
 

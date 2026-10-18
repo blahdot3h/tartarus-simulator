@@ -101,7 +101,7 @@
   function record(board, via) {
     const snap = JSON.parse(JSON.stringify(board));
     const text = JSON.stringify(snap);
-    const sig = [snap.mode, snap.chain, snap.rewards ? 1 : 0, snap.mode === 'challenge' ? 12 : snap.maxDays].join('|');
+    const sig = [snap.mode, snap.chain, snap.rewards ? 1 : 0, snap.maxDays].join('|');
     let run = state.run;
     if (run.seq > 0 && run.last === text) return; // asked again about the same board
     const follows = run.seq === 0 || (run.sig === sig && !run.ended && snap.day >= run.day && snap.day <= run.day + 1);

@@ -15,7 +15,7 @@
   // The published single-file build sets this; its viewer cannot download files.
   const EMBEDDED = !!window.TARTARUS_EMBEDDED;
 
-  const KEYS = { save: 'tartarus-sim:save:v2', prefs: 'tartarus-sim:prefs:v1', params: 'tartarus-sim:params:v6' };
+  const KEYS = { save: 'tartarus-sim:save:v2', prefs: 'tartarus-sim:prefs:v1', params: 'tartarus-sim:params:v7' };
   const HISTORY_LIMIT = 40;
   const DEFAULT_PREFS = { advisor: false, quick: false, motion: true, sound: true, volume: 60, immersive: false };
 
@@ -64,7 +64,6 @@
     endArmed: 0,
   };
 
-  const cargo = { cells: new Set(), vault: new Set(), escort: 'light' };
   const cellEls = [];
 
   // Practice values. Older saved values keep everything except what the live
@@ -74,15 +73,23 @@
   function loadLabParams() {
     const saved = store.get(KEYS.params);
     if (saved) return T.normalizeParams(saved);
+    // Second meals at every rarity, as players' games show (2026-10-17):
+    // the saved Legendary-and-up gives way; the rest carries over.
+    const v6 = store.get('tartarus-sim:params:v6');
+    if (v6 && typeof v6 === 'object') {
+      delete v6.doubleEatTier;
+      return T.normalizeParams(v6);
+    }
     // The live door odds replace the old defaults (2026-10-16); the rest of
     // the Lab's settings carry over.
     const v5 = store.get('tartarus-sim:params:v5');
     if (v5 && typeof v5 === 'object') {
       delete v5.tierWeights;
+      delete v5.doubleEatTier;
       return T.normalizeParams(v5);
     }
     let old = store.get('tartarus-sim:params:v4') || store.get('tartarus-sim:params:v3');
-    const drop = ['destinations', 'fewerDoorsChance', 'eventTwoDoors', 'patrolRange', 'startTools', 'tierWeights'];
+    const drop = ['destinations', 'fewerDoorsChance', 'eventTwoDoors', 'patrolRange', 'startTools', 'tierWeights', 'doubleEatTier'];
     if (!old) old = store.get('tartarus-sim:params:v2');
     if (old && typeof old === 'object') for (const key of drop) delete old[key];
     return T.normalizeParams(old);
@@ -108,13 +115,10 @@
   }
 
   function modeName(st) {
-    if (st.mode === 'challenge') return `Contract challenge · ${T.LOADOUTS[st.loadout].name}`;
     return st.scenario === 'empty' ? 'Rules drill' : T.SCENARIOS[st.scenario].name;
   }
 
-  const escortName = (key) => (key && T.ESCORTS[key] ? T.ESCORTS[key].name.toLowerCase() : '');
-  const windowOpen = (st) => !!(st && st.challenge && st.challenge.window);
-  const blocked = (st) => !st || st.phase === 'ended' || st.pending.length > 0 || windowOpen(st) || st.phase === 'event' || st.phase === 'office' || !!st.chaining;
+  const blocked = (st) => !st || st.phase === 'ended' || st.pending.length > 0 || st.phase === 'event' || st.phase === 'office' || !!st.chaining;
 
   function toast(text, info) {
     const el = $('toast');
@@ -175,7 +179,7 @@
     return true;
   }
 
-  // Opens whatever the run is now waiting on: a choice, a delivery or the roster.
+  // Opens whatever the run is now waiting on: a choice or the roster.
   function followUp(delay) {
     setTimeout(() => {
       const st = ui.state;
@@ -184,8 +188,6 @@
         if (!$('dlg-results').open) openResults();
       } else if (st.pending.length) {
         openChoice();
-      } else if (windowOpen(st) && !$('dlg-deliver').open) {
-        openDeliver();
       }
     }, delay);
   }
@@ -219,8 +221,8 @@
     render();
   }
 
-  const SOUND_ORDER = ['end', 'rainbow', 'deliver', 'devour', 'hatch', 'open', 'swap', 'nest', 'promote', 'tool', 'window', 'day', 'move'];
-  const SOUND_ALIAS = { window: 'tool', move: 'select' };
+  const SOUND_ORDER = ['end', 'rainbow', 'devour', 'hatch', 'open', 'swap', 'nest', 'promote', 'tool', 'day', 'move'];
+  const SOUND_ALIAS = { move: 'select' };
 
   function playEvents(events) {
     // The bites of a chain flash one after another, so you can follow it.
@@ -240,7 +242,6 @@
       else if (ev.type === 'swap') fx(ev.cell, 'fx-swap');
       else if (ev.type === 'hatch') fx(ev.cell, 'fx-hatch');
       else if (ev.type === 'nest') fx(ev.cell, 'fx-nest');
-      else if (ev.type === 'deliver') ev.cells.forEach((n) => fx(n, 'fx-open'));
     }
     const types = new Set(events.map((e) => e.type));
     const name = SOUND_ORDER.find((t) => types.has(t));
@@ -288,11 +289,9 @@
     if (!st || blocked(st) || st.phase !== 'manage') return;
     const warnings = [];
     if (devoursAvailable(st)) warnings.push('You haven’t used today’s consume yet.');
-    const due = T.currentContract(st);
-    const deliveryDay = due && due.deadline === st.day;
-    const last = st.mode === 'drill' && st.day >= st.maxDays;
+    const last = st.day >= st.maxDays;
     if (!ui.prefs.quick && (warnings.length || last)) {
-      ui.pending = { kind: 'end', warnings, last, deliveryDay };
+      ui.pending = { kind: 'end', warnings, last };
       render();
       return;
     }
@@ -544,19 +543,9 @@
     if (st.pending.length) {
       const kind = st.pending[0].kind;
       const start = !!st.pending[0].start;
-      const title = kind === 'gift' ? "Warden's Treasure" : kind === 'refit' ? 'Refit' : start ? 'Starting instrument' : 'Objective met';
-      const detail = kind === 'gift' ? 'A Rainbow reached the vault. Pick one gift; it takes effect at once.' : kind === 'refit' ? 'Delivery complete. Pick a tool for the rest of the run.' : start ? 'The run begins: pick one of three instruments to keep for the whole run.' : `${T.OBJECTIVES[st.objective.id].name} is complete. Pick a tool for the rest of the run.`;
+      const title = kind === 'gift' ? "Warden's Treasure" : start ? 'Starting instrument' : 'Objective met';
+      const detail = kind === 'gift' ? 'A Rainbow reached the vault. Pick one gift; it takes effect at once.' : start ? 'The run begins: pick one of three instruments to keep for the whole run.' : `${T.OBJECTIVES[st.objective.id].name} is complete. Pick a tool for the rest of the run.`;
       setDecision(title, detail, [['Choose', openChoice, 'primary']], true);
-      return;
-    }
-    if (windowOpen(st)) {
-      const contract = T.currentContract(st);
-      setDecision(
-        st.challenge.window.early ? 'Early heavy delivery' : 'Delivery window',
-        `"${contract.name}" is ready to ship: ${contract.needs.join('; ').toLowerCase()}.`,
-        [['Prepare delivery', () => openDeliver(), 'primary'], ...(st.challenge.window.early ? [['Close window', () => run((s) => T.cancelEarlyDelivery(s))]] : [['Skip contract', () => run((s) => T.skipDelivery(s)), 'danger']])],
-        true,
-      );
       return;
     }
     if (st.phase === 'event' && st.event) {
@@ -603,7 +592,6 @@
       return;
     }
     const devours = devoursAvailable(st);
-    const due = T.currentContract(st);
     const warden = st.cells[st.position];
     let lead;
     // A day has a devour or a swap, not both.
@@ -613,9 +601,7 @@
     else if (!warden.inmate || warden.sealed) lead = `The warden's cell (${L(st.position)}) is empty, so there is no consume today. Replace or end the day.`;
     else if (devours) lead = `The ${T.describe(warden.inmate)} in the warden's cell (${L(st.position)}) can make today's consume. Select it to see its ${T.plural(devours, 'target')}, or double-click a target to consume it. ${T.canStopChain && T.canStopChain(st) ? 'It then goes on eating: you pick each next meal, or stop the chain, as the game’s Cancel does.' : 'It then must keep eating while it can: a single meal is taken at once, and you pick when there’s a choice.'}`;
     else lead = `The ${T.describe(warden.inmate)} in the warden's cell (${L(st.position)}) has no target today. Replace or end the day.`;
-    const parts = [lead];
-    if (due && due.deadline === st.day) parts.push(`"${due.name}" is due: ending the day opens its delivery window.`);
-    setDecision('Manage the block', parts.join(' '), []);
+    setDecision('Manage the block', lead, []);
   }
 
   function renderEvent(st) {
@@ -644,7 +630,7 @@
       ], true);
       return;
     }
-    if (['appetite', 'convict', 'crow', 'freedom', 'usurp1', 'usurp2', 'usurp3', 'usurp4', 'ratway'].includes(kind)) {
+    if (['appetite', 'convict', 'crow', 'freedom', 'usurp1', 'usurp2', 'usurp3', 'usurp4', 'ratway', 'portion'].includes(kind)) {
       let detail;
       if (kind === 'appetite') {
         const low = T.lowestInmates(st);
@@ -652,6 +638,7 @@
         detail = `Accept to give ${who} ${T.APPETITE_TRIES} tries at +1 tier, each with a ${Math.round(100 * T.APPETITE_ODDS)}% chance.`;
       } else if (kind === 'crow') detail = `Accept to see the rarity behind the next ${T.CROW_CELLS} locked cells clockwise from the warden. Their beasts stay hidden.`;
       else if (kind === 'freedom') detail = `Accept to open ${T.FREEDOM_CELLS} random locked cells. They trigger no other effects.`;
+      else if (kind === 'portion') detail = `Accept to raise up to ${T.PORTION_INMATES} random inmates a tier each.`;
       else if (kind === 'usurp1') detail = 'Accept to raise 1 random inmate a tier. Usurpation I then leaves the special events, Usurpation II joins them, and one appears behind a random locked door.';
       else if (kind === 'usurp2') detail = 'Accept to raise 2 random inmates a tier each. Usurpation II then leaves the special events, and Usurpation III joins them.';
       else if (kind === 'usurp3') detail = 'Accept to raise 2 random inmates 2 tiers each. Usurpation III then leaves the special events, and Usurpation IV joins them.';
@@ -791,7 +778,7 @@
       return;
     }
     if (p.kind === 'end') {
-      const lead = p.last ? `Day ${st.day} is the last day. Ending it closes the run.` : p.deliveryDay ? 'Ending today opens the delivery window.' : '';
+      const lead = p.last ? `Day ${st.day} is the last day. Ending it closes the run.` : '';
       setDecision(p.last ? 'Finish the run?' : `End day ${st.day}?`, [lead, ...p.warnings].filter(Boolean).join(' '), [
         [p.last ? 'Finish run' : 'End day', () => run((s) => T.endDay(s), { select: null }), 'primary'],
         ['Cancel', cancel],
@@ -825,7 +812,7 @@
       return;
     }
     const inmate = cell.inmate;
-    // From Legendary up, Mammoths and Lions also eat their second meal.
+    // Mammoths and Lions also eat their second meal (from the Lab's rarity up).
     const eats = T.eatsOf(st, inmate.beast, inmate.tier).map(T.beastName);
     if (inmate.beast === 'rat' && st.tools.includes('skewer')) eats.push('Rat');
     const parts = [`Eats ${eats.join(' and ')} of the same rarity.`];
@@ -860,7 +847,7 @@
     $('day-num').textContent = String(st.day).padStart(2, '0');
     $('day-of').textContent = `/ ${st.maxDays}`;
     const pill = $('phase-pill');
-    const phase = st.phase === 'ended' ? 'Handed off' : st.phase === 'patrol' ? 'Patrol' : st.phase === 'event' ? 'Event' : windowOpen(st) ? 'Delivery' : 'Manage';
+    const phase = st.phase === 'ended' ? 'Handed off' : st.phase === 'patrol' ? 'Patrol' : st.phase === 'event' ? 'Event' : 'Manage';
     pill.textContent = phase;
     pill.className = 'phase' + (st.phase === 'ended' ? ' is-ended' : st.phase === 'patrol' ? '' : ' is-manage');
     const left = st.maxDays - st.day;
@@ -885,19 +872,10 @@
     huntBtn.disabled = !canHunt;
     huntBtn.title = canHunt ? "Blood-Stained Trap: the Lion in the warden's cell puts a Prey mark on an inmate it can consume. It uses up today's consume or Replace." : "With the Blood-Stained Trap, a Hunt works when the warden stands on a Lion that has an inmate to consume, before today's consume or Replace.";
 
-    const deliverBtn = $('btn-deliver');
-    deliverBtn.hidden = st.mode !== 'challenge';
-    if (st.mode === 'challenge') {
-      const early = T.canOpenEarly(st);
-      deliverBtn.textContent = windowOpen(st) ? 'Delivery window' : 'Deliver heavy early';
-      deliverBtn.disabled = !windowOpen(st) && !early;
-    }
-
     $('btn-undo').disabled = !ui.history.length;
     const endBtn = $('btn-end');
     endBtn.disabled = !free || st.phase !== 'manage';
-    const due = T.currentContract(st);
-    endBtn.textContent = st.mode === 'drill' && st.day >= st.maxDays ? 'Finish run' : due && due.deadline === st.day ? 'End day · deliver' : 'End day';
+    endBtn.textContent = st.day >= st.maxDays ? 'Finish run' : 'End day';
   }
 
   function renderLog() {
@@ -980,7 +958,7 @@
       else if (x.type === 'convict') out.push(item('High-Risk Convict', x.cell === null ? '<span class="recap-note">no cell left</span>' : `<span class="recap-note">cell ${L(x.cell)}</span>`));
       else if (x.type === 'crow') out.push(item('Crow Whispers', `<span class="recap-note">${x.cells.length ? `rarity shown at ${x.cells.map(L).join(', ')}` : 'nothing left to show'}</span>`));
       else if (x.type === 'hunt') out.push(item(T.eventName('hunt'), `<span class="recap-note">${[x.cells.length ? `low rarity shown at ${x.cells.map(L).join(', ')}` : '', x.high.length ? `Rare or better at ${x.high.map(L).join(', ')}` : ''].filter(Boolean).join('; ') || 'no locked cell left'}</span>`));
-      else if (x.type === 'usurp1' || x.type === 'usurp2') out.push(item(T.eventName(x.type), x.raised.length ? x.raised.map((r) => tok(r.who, { cell: r.cell })).join('') : '<span class="recap-note">no one</span>'));
+      else if (x.type === 'usurp1' || x.type === 'usurp2' || x.type === 'portion') out.push(item(T.eventName(x.type), x.raised.length ? x.raised.map((r) => tok(r.who, { cell: r.cell })).join('') : '<span class="recap-note">no one</span>'));
       else if (x.type === 'freedom') out.push(item('Taste of Freedom', `<span class="recap-note">${x.cells.length ? `opened ${x.cells.map(L).join(', ')}` : 'no locked cell left'}</span>`));
       else if (x.type === 'instigate') out.push(item('Instigate', `<span class="recap-note">${x.cells.length ? `events at ${x.cells.map(L).join(', ')}` : 'no free door'}</span>`));
       else if (x.type === 'bestow') out.push(item('Bestow +1', x.who ? tok(x.who, { cell: x.cell }) : '<span class="recap-note">no one</span>'));
@@ -995,8 +973,6 @@
       else if (x.type === 'tool') out.push(item('Tool', `<span class="recap-note">${esc(T.toolName(x.id))}</span>`));
       else if (x.type === 'gift') out.push(item('Treasure', `<span class="recap-note">${esc(T.toolName(x.id))}</span>`));
       else if (x.type === 'ivory') out.push(item('Tusk', `<span class="recap-note">${T.plural(x.count, 'inmate')} +1</span>`));
-      else if (x.type === 'deliver') out.push(item('Delivered', `<span class="recap-note">${esc(x.name)} · ${x.points} pts</span>`));
-      else if (x.type === 'skip') out.push(item('Skipped', `<span class="recap-note">${esc(x.name)}</span>`));
     }
     return out;
   }
@@ -1009,17 +985,6 @@
     const st = ui.state;
     const board = T.boardInmates(st);
     renderObjective(st);
-    if (st.mode === 'challenge') {
-      const ch = st.challenge;
-      $('goal-title').textContent = 'Contract challenge';
-      $('goal-text').textContent = `Deliver at least two contracts, including the heavy one. Seed ${st.seed}.`;
-      $('goal-facts').innerHTML = facts([
-        ['Vouchers', ch.vouchers],
-        ['Score', ch.score],
-        ['Delivered', `${ch.deliveries.filter((d) => d.success).length} / 3`],
-      ]);
-      return;
-    }
     $('goal-title').textContent = st.scenario === 'empty' ? 'Rules drill' : T.SCENARIOS[st.scenario].name;
     $('goal-text').textContent = `Raise as many inmates to Rainbow as you can before the run ends on day ${st.maxDays}. Seed ${st.seed}.`;
     const best = Math.max(st.vault.length ? T.RAINBOW : 0, ...board.map((i) => i.tier), 0);
@@ -1057,7 +1022,7 @@
     $('vault').innerHTML = html;
     const cache = st.params.rewards ? `Warden's Treasure gifts earned: ${st.cache}.` : `Warden's Treasure claims: ${st.cache}.`;
     $('vault-note').textContent = st.vault.length
-      ? `${T.plural(st.vault.length, 'Rainbow')} in the vault. ${cache}${st.mode === 'challenge' ? ' Vault Rainbows count for the heavy contract.' : ''}`
+      ? `${T.plural(st.vault.length, 'Rainbow')} in the vault. ${cache}`
       : st.params.rewards
         ? "Inmates that reach Rainbow leave the block and wait here. Each one opens the Warden's Treasure, where you pick a gift."
         : "Inmates that reach Rainbow leave the block and wait here. Each one adds a Warden's Treasure claim.";
@@ -1067,39 +1032,11 @@
     const st = ui.state;
     const list = $('tool-list');
     if (!st.tools.length) {
-      let empty;
-      if (st.mode === 'challenge') empty = 'No tools yet. Meeting the objective and each of your first two deliveries earn one.';
-      else if (st.params.rewards) empty = 'No tools yet. Meeting the objective earns one. The Lab can add more, or change the starting picks.';
-      else empty = 'Rewards are off for this drill. Add tools in the Lab to test them.';
+      const empty = st.params.rewards ? 'No tools yet. Meeting the objective earns one. The Lab can add more, or change the starting picks.' : 'Rewards are off for this drill. Add tools in the Lab to test them.';
       list.innerHTML = `<li class="tool-text">${empty}</li>`;
       return;
     }
     list.innerHTML = st.tools.map((id) => `<li class="tool"><span class="tool-name">${esc(T.toolName(id))}</span><span class="tool-text">${esc(T.toolText(id))}</span></li>`).join('');
-  }
-
-  function renderContracts() {
-    const st = ui.state;
-    const panel = $('panel-contracts');
-    panel.hidden = st.mode !== 'challenge';
-    if (panel.hidden) return;
-    const ch = st.challenge;
-    let html = `<div class="voucher-line"><span><b>${ch.vouchers}</b> vouchers</span><span><b>${ch.score}</b> points</span></div>`;
-    ch.contracts.forEach((c, i) => {
-      const d = ch.deliveries[i];
-      const active = !d && i === ch.deliveries.length;
-      let status;
-      if (d && d.success) status = `<span class="status is-done">Delivered · ${d.points} pts</span>`;
-      else if (d) status = '<span class="status is-failed">Missed</span>';
-      else if (active) status = `<span class="status is-active">Due end of day ${c.deadline}</span>`;
-      else status = `<span class="status">Due day ${c.deadline}</span>`;
-      html += `<article class="contract${active ? ' is-active' : ''}${d && !d.success ? ' is-missed' : ''}">
-        <div class="contract-head"><span class="contract-name">${esc(c.name)}</span>${status}</div>
-        <ul class="contract-lines">${c.needs.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>
-        ${c.heavy ? '<p class="contract-meta"><span class="contract-heavy">Heavy contract</span> · needed to pass</p>' : ''}
-      </article>`;
-    });
-    if (T.canOpenEarly(st)) html += '<button type="button" class="btn" data-early>Deliver the heavy contract early</button>';
-    $('contract-list').innerHTML = html;
   }
 
   function tipAction(tip) {
@@ -1120,10 +1057,6 @@
         return [ui.state && ui.state.event && ui.state.event.kind === 'hunt' ? 'Confirm' : tip.accept ? 'Accept' : 'Skip', () => run((s) => T.resolveEvent(s, tip.accept))];
       case 'choose':
         return ['Take', () => run((s) => T.choose(s, tip.id))];
-      case 'cargo':
-        return ['Load', () => openDeliver(tip.cargo)];
-      case 'early':
-        return ['Open', () => run((s) => T.openEarlyDelivery(s))];
       case 'end':
         return ['End day', askEndDay];
       default:
@@ -1137,32 +1070,23 @@
   // pick), then a live check that plays every option out many times from the
   // current position with js/solver.js, and a grade for each move you make.
   // The playouts run in a Web Worker when the page allows one, and on this
-  // thread otherwise. Drills are scored by Rainbows; the challenge by passing
-  // first, then points. In a delivery window the trainer also checks the
-  // convoy you're loading.
+  // thread otherwise. Moves are scored by the Rainbows vaulted by the end of
+  // the run.
   const SOLVER_ROLLOUTS = 800;
   const SOLVER_ROLLOUTS_HERE = 300;
   const LIVE_MIN = 150; // playouts per option before the live check leads
-  const solver = { worker: null, failed: false, id: 0, key: '', stateKey: '', result: null, instantKey: '', instant: null, rec: null, cargoTimer: 0 };
+  const SWITCH_MIN = 0.05; // Rainbows a live pick must gain over the strategy's to replace it
+  const solver = { worker: null, failed: false, id: 0, key: '', stateKey: '', result: null, instantKey: '', instant: null };
 
   const solverKey = (st) => {
     const last = st.log[st.log.length - 1];
-    return [st.seed, st.day, st.phase, st.position, st.log.length, last ? last.t : '', st.pending.length, st.used.swap, st.used.devour, st.vault.length, st.challenge ? `${st.challenge.deliveries.length}${st.challenge.window ? 'w' : ''}` : ''].join('|');
+    return [st.seed, st.day, st.phase, st.position, st.log.length, last ? last.t : '', st.pending.length, st.used.swap, st.used.devour, st.vault.length].join('|');
   };
 
   const solverFits = (st) => st && st.phase !== 'ended';
 
   // A stable name for an action, for lists that update in place.
-  const actionKey = (a) => [a.type, a.cell, a.to, a.id, a.accept, a.choice, (a.cells || []).slice().sort((x, y) => x - y).join('.'), (a.vaultIds || []).slice().sort((x, y) => x - y).join('.'), a.escort].join('|');
-
-  // The convoy being loaded in the open delivery window, when it meets the
-  // contract. The live check plays it out next to the trainer's own options.
-  function cargoAction(st) {
-    if (!windowOpen(st) || !$('dlg-deliver').open) return null;
-    const action = { type: 'deliver', cells: [...cargo.cells].sort((a, b) => a - b), vaultIds: [...cargo.vault].sort((a, b) => a - b), escort: cargo.escort };
-    const check = T.deliveryCheck(st, action.cells, action.vaultIds, action.escort);
-    return check.ok ? { action, label: window.TartarusSolver.cargoLabel(st, action, check.points), kind: 'yours' } : null;
-  }
+  const actionKey = (a) => [a.type, a.cell, a.to, a.id, a.accept, a.choice].join('|');
 
   // What the training found for each kind of decision. When the run uses the
   // same food chain as the guide's data (js/guide-data.js), lessons quote
@@ -1172,7 +1096,6 @@
     devour: 'Training: consume every day you can, unless it breaks a prey mark. Waiting for a bigger chain cost Rainbows.',
     swap: 'Training: replace a low-tier inmate in the warden’s cell when no consume there is worth more, since a day has one or the other. Never replacing cost Rainbows.',
     end: 'Training: end the day once nothing here gains.',
-    early: 'Contracts: the heavy contract is needed to pass, and delivering it early ends the run.',
     chain: 'Training: accepting Chain reactions vaulted more Rainbows than skipping them.',
     execution: 'Training: accept an Execution only when it gains more than it removes.',
     trickster: 'Behind Closed Doors makes a Supreme for free: accept it unless the inmate already is one.',
@@ -1180,6 +1103,7 @@
     convict: 'High-Risk Convict opens a cell on a Legendary for free: accept it.',
     crow: 'Crow Whispers costs nothing: accept it, then aim your patrols at the higher rarities it shows.',
     freedom: 'Taste of Freedom opens 3 doors for free: accept it.',
+    portion: 'Extra Portion raises up to 3 inmates for free: accept it.',
     usurp1: 'Usurpation I raises an inmate for free, and brings Usurpation II: accept it.',
     usurp2: 'Usurpation II raises two inmates for free, and brings Usurpation III: accept it.',
     usurp3: 'Usurpation III raises two inmates 2 tiers each, and brings Usurpation IV: accept it.',
@@ -1189,8 +1113,6 @@
     office: 'At the office, Bestow when a raise helps now, and Instigate when the block needs new doors with events.',
     chainPick: 'You pick each meal of a chain, or stop it with Cancel: take the meal that keeps the chain fed at the next tier, and stop only when every meal would cost more than it gains.',
     gift: 'Training: picking the gift that fits the board beat always taking the same one.',
-    window: 'Contracts: on the first two, send inmates you can spare by light escort, and keep 3 vouchers for the heavy contract. Sending the most points every time passed far less often.',
-    heavy: 'Contracts: the heavy contract ends the run, so it takes the most points your vouchers can escort.',
   };
 
   function guideFor(st) {
@@ -1209,18 +1131,15 @@
     if (st.pending.length) {
       if (st.pending[0].kind === 'gift') return LESSONS.gift;
       const names = window.TartarusSolver.paramsFor(st).toolRank.map((id) => T.toolName(id));
-      if (st.challenge) return `Training ranking for the challenge: ${names.join(', ')}.`;
       return `Training: take the instrument that adds the most to the ones you hold, measured over millions of runs with each pair and set. On its own, the order is ${names.join(', ')}.`;
     }
-    if (st.challenge && st.challenge.window) return challengeLesson(st) || (st.challenge.deliveries.length >= 2 ? LESSONS.heavy : LESSONS.window);
-    if (st.challenge && st.phase !== 'event') return nextContractLesson(st);
     if (st.phase === 'event' && st.event) {
       if (st.event.kind === 'chain') return (vs('skipChain', 'Training: skipping Chain reactions cost Rainbows') || LESSONS.chain) + (g ? '.' : '');
       return LESSONS[st.event.kind] || LESSONS.execution;
     }
     if (st.phase === 'office') return LESSONS.office;
     if (st.chaining) return LESSONS.chainPick;
-    if (st.phase === 'patrol') return action && action.type === 'early' ? LESSONS.early : LESSONS.patrol;
+    if (st.phase === 'patrol') return LESSONS.patrol;
     if (!action) return '';
     if (action.type === 'devour') return (vs('wait2', 'Training: consume every day you can, unless it breaks a prey mark. Waiting for a bigger chain cost Rainbows') || LESSONS.devour) + (g ? '.' : '');
     if (action.type === 'swap') {
@@ -1236,44 +1155,16 @@
     return LESSONS[action.type] || '';
   }
 
-  // During challenge play: the next contract, and when the trainer starts
-  // playing to meet it (the last days before its deadline).
-  function nextContractLesson(st) {
-    const contract = T.currentContract(st);
-    if (!contract) return '';
-    const days = window.TartarusSolver.paramsFor(st).needDays || 2;
-    const due = contract.deadline === st.day ? 'due at the end of today' : `due at the end of day ${contract.deadline}`;
-    if (contract.heavy) return `Next: "${contract.name}", ${due}. It needs a Supreme or a vaulted Rainbow, so the trainer builds tiers and keeps 3 vouchers for a heavy escort.`;
-    const from = contract.deadline - days + 1;
-    const when = st.day >= from ? 'The trainer is now playing to meet it.' : `From day ${from}, the trainer plays to meet it.`;
-    return `Next: "${contract.name}", ${due}: ${contract.needs.join(', ').toLowerCase()}. ${when}`;
-  }
-
-  // The challenge study's numbers for convoys, when the guide has them.
-  function challengeLesson(st) {
-    const g = guideFor(st);
-    const c = g && g.challenge;
-    if (!c || st.challenge.deliveries.length >= 2) return '';
-    const most = c.habits.find((h) => h.id === 'mostPointsAll');
-    if (!most) return '';
-    return `Contracts: on the first two, send inmates you can spare by light escort, and keep 3 vouchers for the heavy contract. Training passed ${Math.round(100 * c.headline.passRate)}% of runs this way, against ${Math.round(100 * most.passRate)}% when every convoy sent the most points.`;
-  }
-
   function startSolver() {
     const st = ui.state;
-    const stateKey = solverKey(st);
-    // The convoy being loaded joins the check unless it's already an option.
-    let mine = cargoAction(st);
-    if (mine && window.TartarusSolver.candidates(st).some((c) => window.TartarusSolver.sameAction(c.action, mine.action))) mine = null;
-    const key = mine ? `${stateKey}|${actionKey(mine.action)}` : stateKey;
+    const key = solverKey(st);
     if (key === solver.key) return;
     solver.key = key;
-    solver.stateKey = stateKey;
+    solver.stateKey = key;
     solver.id += 1;
     solver.result = null;
     const id = solver.id;
     const state = Object.assign({}, st, { log: [] });
-    const extra = mine ? [mine] : null;
     if (!solver.worker && !solver.failed) {
       try {
         solver.worker = new Worker(`js/solver-worker.js${SCRIPT_QUERY}`);
@@ -1282,7 +1173,6 @@
           solver.result = e.data.result;
           renderSolver();
           renderHints();
-          renderDeliverTrainer();
         };
         solver.worker.onerror = () => {
           // Fall back to this thread, and redo the current position.
@@ -1296,18 +1186,17 @@
         solver.worker = null;
       }
     }
-    if (solver.worker) solver.worker.postMessage({ id, state: JSON.parse(JSON.stringify(state)), rollouts: SOLVER_ROLLOUTS, extra });
-    else solveHere(id, state, extra);
+    if (solver.worker) solver.worker.postMessage({ id, state: JSON.parse(JSON.stringify(state)), rollouts: SOLVER_ROLLOUTS });
+    else solveHere(id, state);
   }
 
-  function solveHere(id, state, extra) {
-    const job = window.TartarusSolver.solve(JSON.parse(JSON.stringify(state)), { rollouts: SOLVER_ROLLOUTS_HERE, seed: (id * 7919 + 1) >>> 0, extra });
+  function solveHere(id, state) {
+    const job = window.TartarusSolver.solve(JSON.parse(JSON.stringify(state)), { rollouts: SOLVER_ROLLOUTS_HERE, seed: (id * 7919 + 1) >>> 0 });
     const tick = () => {
       if (id !== solver.id) return;
       solver.result = job.step(12);
       renderSolver();
       renderHints();
-      renderDeliverTrainer();
       if (!solver.result.done) setTimeout(tick, 16);
     };
     setTimeout(tick, 0);
@@ -1332,18 +1221,19 @@
 
   // The move to recommend: the strategy's instant pick, unless the live check
   // finds a clearly better move (by more than its paired margin of error), so
-  // the recommendation doesn't flicker between near-equal options. A convoy
-  // the player put together is never recommended in place of the trainer's.
+  // the recommendation doesn't flicker between near-equal options.
   function recommendation(st) {
     if (!ui.prefs.advisor || !solverFits(st)) return null;
     const S = window.TartarusSolver;
     const pick = instantPick(st);
     const r = liveResult(st);
-    const ranked = r ? r.options.filter((o) => !o.extra) : [];
+    const ranked = r ? r.options : [];
     const live = r && ranked.length > 1 && (r.done || r.rounds >= LIVE_MIN) ? ranked[0] : null;
     if (!live) return pick ? Object.assign({ live: false }, pick) : null;
     const mine = pick && ranked.find((o) => S.sameAction(o.action, pick.action));
-    if (mine && (mine === live || live.mean - mine.mean <= 1.96 * mine.gapSe)) {
+    // A better move must also win by a margin worth playing for: shared dice
+    // make the paired margin narrow, and a near tie flips the advice.
+    if (mine && (mine === live || live.mean - mine.mean <= Math.max(1.96 * mine.gapSe, SWITCH_MIN))) {
       const why = mine === live ? pick.why : `${pick.why} The live check rates it about equal to the best.`;
       return Object.assign({ live: true, rounds: r.rounds }, pick, { label: mine.label, why, option: mine });
     }
@@ -1356,15 +1246,13 @@
     if (action.type === 'patrol') run((s) => window.TartarusSolver.apply(s, action), { select: action.cell });
     else if (action.type === 'devour' || action.type === 'chain' || action.type === 'stopchain' || action.type === 'swap') run((s) => window.TartarusSolver.apply(s, action), { select: st.position });
     else if (action.type === 'end') run((s) => T.endDay(s), { select: null });
-    // A convoy opens the delivery window with it loaded, to check before sending.
-    else if (action.type === 'deliver') openDeliver({ cells: action.cells, vaultIds: action.vaultIds, escort: action.escort });
     else run((s) => window.TartarusSolver.apply(s, action));
   }
 
   // ---------- Grading your moves ----------
 
   function trainerFor(st) {
-    if (!ui.trainer || ui.trainer.seed !== st.seed) ui.trainer = { seed: st.seed, moves: 0, good: 0, lost: 0, lostPass: 0, lostPoints: 0, last: null };
+    if (!ui.trainer || ui.trainer.seed !== st.seed) ui.trainer = { seed: st.seed, moves: 0, good: 0, lost: 0, last: null };
     return ui.trainer;
   }
 
@@ -1382,39 +1270,23 @@
       t.last = r && r.options.length < 2 ? null : { verdict: 'pending' };
       return;
     }
-    const best = r.options.find((o) => !o.extra) || r.options[0];
+    const best = r.options[0];
     const chosen = r.options.find((o) => window.TartarusSolver.sameAction(o.action, move));
     if (!chosen) {
       t.last = null;
       return;
     }
     const loss = Math.max(0, best.mean - chosen.mean);
-    const verdict = window.TartarusSolver.sameAction(chosen.action, best.action) ? 'best' : loss <= 1.96 * chosen.gapSe ? 'close' : 'costly';
+    const verdict = window.TartarusSolver.sameAction(chosen.action, best.action) ? 'best' : loss <= Math.max(1.96 * chosen.gapSe, SWITCH_MIN) ? 'close' : 'costly';
     t.moves += 1;
-    if (verdict === 'costly') {
-      t.lost += loss;
-      t.lostPass += Math.max(0, best.pass - chosen.pass);
-      t.lostPoints += Math.max(0, best.points - chosen.points);
-    } else t.good += 1;
-    t.last = { verdict, loss, goal: r.goal, chosen: chosen.label, best: best.label, chosenOpt: chosen, bestOpt: best };
+    if (verdict === 'costly') t.lost += loss;
+    else t.good += 1;
+    t.last = { verdict, loss, chosen: chosen.label, best: best.label, chosenOpt: chosen, bestOpt: best };
   }
 
-  // An option's expected result: Rainbows in a drill, or pass chance and
-  // points in the challenge.
-  function fmtOption(goal, o) {
-    if (goal === 'contract') return `${Math.round(100 * o.pass)}% pass · ${o.points.toFixed(0)} pts`;
+  // An option's expected Rainbows, with its 95% margin.
+  function fmtOption(o) {
     return `${o.mean.toFixed(2)}${o.n > 1 ? ` ±${(1.96 * o.se).toFixed(2)}` : ''}`;
-  }
-
-  // What a costly move gave up, in words.
-  function lossText(goal, best, chosen, loss) {
-    if (goal !== 'contract') return `Cost about ${loss.toFixed(2)} Rainbows`;
-    const pass = Math.round(100 * (best.pass - chosen.pass));
-    const points = Math.round(best.points - chosen.points);
-    if (pass >= 1 && points >= 1) return `Cost about ${pass}% pass chance and ${T.plural(points, 'point')}`;
-    if (pass >= 1) return `Cost about ${pass}% pass chance`;
-    if (points >= 1) return `Cost about ${T.plural(points, 'point')}`;
-    return 'Cost a little: under 1% pass chance';
   }
 
   function renderGrade(st) {
@@ -1427,20 +1299,14 @@
     if (last && last.verdict === 'pending') {
       html += '<p class="trainer-eyebrow">Your last move</p><p class="trainer-verdict">Not graded: the trainer was still checking that position.</p>';
     } else if (last) {
-      const title = last.verdict === 'best' ? 'The best move ✓' : last.verdict === 'close' ? 'Close to the best ✓' : lossText(last.goal, last.bestOpt, last.chosenOpt, last.loss);
+      const title = last.verdict === 'best' ? 'The best move ✓' : last.verdict === 'close' ? 'Close to the best ✓' : `Cost about ${last.loss.toFixed(2)} Rainbows`;
       const detail = last.verdict === 'best'
-        ? `${esc(last.chosen)}: ${esc(fmtOption(last.goal, last.chosenOpt))} expected.`
-        : `You chose ${esc(last.chosen)} (${esc(fmtOption(last.goal, last.chosenOpt))}). The trainer preferred ${esc(last.best)} (${esc(fmtOption(last.goal, last.bestOpt))}).${last.verdict === 'close' ? ' That’s within the margin of error.' : ''}`;
+        ? `${esc(last.chosen)}: ${esc(fmtOption(last.chosenOpt))} expected.`
+        : `You chose ${esc(last.chosen)} (${esc(fmtOption(last.chosenOpt))}). The trainer preferred ${esc(last.best)} (${esc(fmtOption(last.bestOpt))}).${last.verdict === 'close' ? ' That’s within the margin of error.' : ''}`;
       html += `<p class="trainer-eyebrow">Your last move</p><p class="trainer-verdict is-${last.verdict}">${esc(title)}</p><p class="trainer-detail">${detail}</p>`;
     }
     if (t.moves) {
-      let given = '';
-      if (st.mode === 'challenge') {
-        const parts = [];
-        if (t.lostPass >= 0.005) parts.push(`${Math.round(100 * t.lostPass)}% pass chance`);
-        if (t.lostPoints >= 0.5) parts.push(T.plural(Math.round(t.lostPoints), 'point'));
-        if (parts.length) given = `, about ${parts.join(' and ')} given up`;
-      } else if (t.lost > 0.005) given = `, about ${t.lost.toFixed(2)} expected Rainbows given up`;
+      const given = t.lost > 0.005 ? `, about ${t.lost.toFixed(2)} expected Rainbows given up` : '';
       html += `<p class="trainer-session">This run: ${t.good} of ${T.plural(t.moves, 'graded move')} best or close${given}.</p>`;
     }
     setHTML(box, html);
@@ -1472,22 +1338,18 @@
     const S = window.TartarusSolver;
     const r = liveResult(st);
     const options = r ? r.options : [];
-    const goal = r ? r.goal : st.mode === 'challenge' ? 'contract' : 'rainbows';
 
     // The recommendation, then the lesson from training for this decision.
     // The box and its button stay put; only their contents change.
     const rec = recommendation(st);
-    solver.rec = rec;
     const pickBox = $('trainer-pick');
     if (rec) {
       pickBox.hidden = false;
       const source = rec.live ? `Checked by ${rec.rounds.toLocaleString()} playouts per option` : 'Instant pick from training · checking…';
-      const result = rec.option && goal === 'contract' ? `<p class="trainer-why">Expected: ${esc(fmtOption(goal, rec.option))}.</p>` : '';
       // The move and its button come first, so the button holds still while
       // the live check's numbers below it change.
       setHTML($('trainer-pick-head'), `<p class="trainer-eyebrow">Recommended</p><p class="trainer-move">${esc(rec.label)}</p>`);
-      setHTML($('trainer-pick-body'), `<p class="trainer-source">${esc(source)}</p>${rec.why ? `<p class="trainer-why">${esc(rec.why)}</p>` : ''}${result}<p class="trainer-lesson">${esc(lessonFor(st, rec.action))}</p>`);
-      $('btn-trainer-play').textContent = rec.action.type === 'deliver' ? 'Load it' : 'Play it';
+      setHTML($('trainer-pick-body'), `<p class="trainer-source">${esc(source)}</p>${rec.why ? `<p class="trainer-why">${esc(rec.why)}</p>` : ''}<p class="trainer-lesson">${esc(lessonFor(st, rec.action))}</p>`);
     } else {
       pickBox.hidden = true;
     }
@@ -1498,10 +1360,10 @@
     if (!r) status.textContent = 'Live check: starting…';
     else if (options.length <= 1) status.textContent = options.length ? 'Only one move here.' : 'Nothing to decide right now.';
     else status.textContent = r.done ? `Live check: ${r.rounds.toLocaleString()} playouts per option` : `Live check: ${r.rounds.toLocaleString()} playouts per option so far…`;
-    const top = options.find((o) => !o.extra) || options[0];
-    const second = options.find((o) => o !== top && !o.extra);
+    const top = options[0];
+    const second = options[1];
     const max = Math.max(0.01, ...options.map((o) => o.mean));
-    const close = top && second && top.mean - second.mean < 1.96 * second.gapSe;
+    const close = top && second && top.mean - second.mean < Math.max(1.96 * second.gapSe, SWITCH_MIN);
     const shown = options.length > 1 ? options : [];
     syncRows(
       $('solver-list'),
@@ -1510,7 +1372,7 @@
       () => {
         const li = document.createElement('li');
         li.className = 'solver-row';
-        li.innerHTML = '<span class="solver-label"><span class="solver-text"></span><span class="solver-tag" hidden></span></span><span class="solver-value"></span><span class="solver-meter"><span></span></span><span class="solver-sub" hidden></span>';
+        li.innerHTML = '<span class="solver-label"><span class="solver-text"></span><span class="solver-tag" title="The trained strategy picks this move without simulating." hidden>strategy</span></span><span class="solver-value" title="Expected Rainbows vaulted by the end of the run, with a 95% margin"></span><span class="solver-meter"><span></span></span><span class="solver-sub" hidden></span>';
         li.btn = makeButton('Play this', () => playSolverMove(li.option && li.option.action));
         li.appendChild(li.btn);
         return li;
@@ -1520,15 +1382,9 @@
         const chosen = rec ? S.sameAction(o.action, rec.action) : o === top;
         li.classList.toggle('is-best', chosen);
         li.querySelector('.solver-text').textContent = o.label;
-        const tag = li.querySelector('.solver-tag');
-        tag.hidden = !o.policy && !o.extra;
-        tag.textContent = o.extra ? 'yours' : 'strategy';
-        tag.title = o.extra ? 'The convoy you are loading.' : 'The trained strategy picks this move without simulating.';
-        const value = li.querySelector('.solver-value');
-        value.textContent = fmtOption(goal, o);
-        value.title = goal === 'contract' ? 'Chance to pass the challenge, and contract points on average' : 'Expected Rainbows vaulted by the end of the run, with a 95% margin';
-        const width = goal === 'contract' ? 100 * o.pass : (100 * o.mean) / max;
-        li.querySelector('.solver-meter span').style.width = `${Math.max(2, width).toFixed(1)}%`;
+        li.querySelector('.solver-tag').hidden = !o.policy;
+        li.querySelector('.solver-value').textContent = fmtOption(o);
+        li.querySelector('.solver-meter span').style.width = `${Math.max(2, (100 * o.mean) / max).toFixed(1)}%`;
         // A devour also shows its exact chain odds.
         const sub = li.querySelector('.solver-sub');
         let subText = '';
@@ -1539,121 +1395,13 @@
         sub.hidden = !subText;
         sub.textContent = subText;
         li.btn.hidden = chosen || shown.length > 6;
-        li.btn.textContent = o.action.type === 'deliver' ? 'Load this' : 'Play this';
       },
     );
     $('solver-note').textContent = shown.length < 2
       ? ''
       : close
         ? 'The top moves are within the margin of error: either is fine.'
-        : goal === 'contract'
-          ? 'Each option is played out from here with everything you can’t see re-rolled, and the trained strategy making every later choice. Ranked by the chance to pass the challenge, then by contract points.'
-          : 'Each option is played out from here with everything you can’t see re-rolled, and the trained strategy making every later choice. Scores are Rainbows vaulted by the end of the run.';
-  }
-
-  // Short names for the convoys the trainer compares in a delivery window.
-  const CONVOY_NAMES = { pick: 'Trained pick', most: 'Most points', light: 'Most points by light escort', least: 'Cheapest cargo', yours: 'Your cargo', skip: 'Skip this contract', close: 'Close the window' };
-
-  // The trainer inside the delivery window: its convoy, why, how every
-  // option plays out, and how the convoy you're loading compares.
-  function renderDeliverTrainer() {
-    const box = $('deliver-trainer');
-    const off = $('deliver-trainer-off');
-    const st = ui.state;
-    if (!st || !windowOpen(st) || !$('dlg-deliver').open) return;
-    off.hidden = !!ui.prefs.advisor;
-    box.hidden = !ui.prefs.advisor;
-    renderPickHints();
-    if (!ui.prefs.advisor) return;
-    const S = window.TartarusSolver;
-    const rec = recommendation(st);
-    const r = liveResult(st);
-    const goal = 'contract';
-    const options = r ? r.options : [];
-    const mine = cargoAction(st);
-    const mineOpt = mine ? options.find((o) => S.sameAction(o.action, mine.action)) : null;
-    let html = '';
-    setHTML($('deliver-trainer-head'), rec ? `<p class="trainer-eyebrow">Trainer’s pick</p><p class="trainer-move">${esc(rec.label)}</p>` : '<p class="trainer-eyebrow">Trainer</p><p class="trainer-why">Working out a convoy…</p>');
-    if (rec) {
-      const source = rec.live ? `Checked by ${rec.rounds.toLocaleString()} playouts per option` : 'Instant pick from training · checking…';
-      html += `<p class="trainer-source">${esc(source)}</p>`;
-      if (rec.why) html += `<p class="trainer-why">${esc(rec.why)}</p>`;
-      if (rec.option) html += `<p class="trainer-why">Expected: ${esc(fmtOption(goal, rec.option))}.</p>`;
-    }
-    // How the convoy being loaded compares.
-    if (mine && rec) {
-      if (S.sameAction(mine.action, rec.action)) html += '<p class="trainer-verdict is-best">Your cargo matches the trainer’s pick ✓</p>';
-      else if (mineOpt && rec.option && mineOpt.n >= 60) {
-        const loss = rec.option.mean - mineOpt.mean;
-        const verdict = loss <= 0 ? 'best' : loss <= 1.96 * (mineOpt.gapSe || 0) ? 'close' : 'costly';
-        const title = verdict === 'best' ? 'Your cargo checks out as well as the trainer’s pick ✓' : verdict === 'close' ? 'Your cargo is about as good ✓' : `Your cargo ${lossText(goal, rec.option, mineOpt, loss).replace(/^Cost/, 'costs')}`;
-        html += `<p class="trainer-verdict is-${verdict}">${esc(title)}</p><p class="trainer-detail">Your cargo: ${esc(fmtOption(goal, mineOpt))}. The trainer’s pick: ${esc(fmtOption(goal, rec.option))}.</p>`;
-      } else html += '<p class="trainer-detail">Checking your cargo…</p>';
-    }
-    setHTML($('deliver-trainer-body'), html);
-    const recBtn = $('btn-deliver-trainer');
-    recBtn.hidden = !rec;
-    if (rec) recBtn.textContent = rec.action.type === 'deliver' ? 'Load the trainer’s pick' : rec.action.type === 'skip' ? 'Skip, as the trainer suggests' : 'Close, as the trainer suggests';
-    // Every option the live check compared, best first.
-    syncRows(
-      $('deliver-options'),
-      options.length > 1 ? options : [],
-      (o) => actionKey(o.action),
-      () => {
-        const li = document.createElement('li');
-        li.className = 'dopt';
-        li.innerHTML = '<span class="dopt-name"></span><span class="dopt-value"></span><span class="dopt-sub"></span>';
-        li.btn = makeButton('Load', () => {
-          const a = li.option && li.option.action;
-          if (a && a.type === 'deliver') loadCargo(a);
-        });
-        li.appendChild(li.btn);
-        return li;
-      },
-      (li, o) => {
-        li.option = o;
-        const yours = mine && S.sameAction(o.action, mine.action);
-        const picked = rec && S.sameAction(o.action, rec.action);
-        li.classList.toggle('is-best', !!picked);
-        const kind = o.extra ? 'yours' : o.action.type === 'skip' || o.action.type === 'close' ? o.action.type : o.kind;
-        const name = CONVOY_NAMES[kind] || 'Convoy';
-        li.querySelector('.dopt-name').textContent = `${picked ? '★ ' : ''}${name}${yours && kind !== 'yours' ? ' · your cargo' : ''}`;
-        li.querySelector('.dopt-value').textContent = fmtOption(goal, o);
-        li.querySelector('.dopt-sub').textContent = o.action.type === 'deliver' ? o.label.replace(/^Send /, '') : '';
-        li.btn.hidden = o.action.type !== 'deliver' || !!yours;
-      },
-    );
-    $('deliver-options-note').hidden = options.length < 2;
-  }
-
-  // Loads a convoy into the delivery window.
-  function loadCargo(action) {
-    cargo.cells = new Set(action.cells);
-    cargo.vault = new Set(action.vaultIds);
-    cargo.escort = action.escort;
-    renderDeliver();
-  }
-
-  // Marks the trainer's convoy in the window's list of inmates.
-  function renderPickHints() {
-    const rec = ui.prefs.advisor && ui.state ? solver.rec || recommendation(ui.state) : null;
-    const a = rec && rec.action.type === 'deliver' ? rec.action : null;
-    for (const input of document.querySelectorAll('#deliver-inmates input')) {
-      const key = Number(input.value);
-      const on = !!a && (input.dataset.kind === 'vault' ? a.vaultIds.includes(key) : a.cells.includes(key));
-      input.closest('.pick').classList.toggle('is-hint', on);
-    }
-  }
-
-  // Re-checks the convoy being loaded shortly after it changes.
-  function scheduleCargoCheck() {
-    clearTimeout(solver.cargoTimer);
-    if (!ui.prefs.advisor) return;
-    solver.cargoTimer = setTimeout(() => {
-      if (!ui.state || !solverFits(ui.state)) return;
-      startSolver();
-      renderDeliverTrainer();
-    }, 250);
+        : 'Each option is played out from here with everything you can’t see re-rolled, and the trained strategy making every later choice. Scores are Rainbows vaulted by the end of the run.';
   }
 
   // Marks the recommended move on the board and the action bar.
@@ -1661,7 +1409,6 @@
     const st = ui.state;
     if (!st) return;
     const rec = recommendation(st);
-    solver.rec = rec;
     const a = rec ? rec.action : null;
     const cell = a && a.type === 'patrol' ? a.cell : a && (a.type === 'devour' || a.type === 'chain') ? a.to : null;
     cellEls.forEach((el, n) => el.btn.classList.toggle('is-hint', n === cell));
@@ -1677,7 +1424,6 @@
     $('btn-advisor').setAttribute('aria-pressed', String(ui.prefs.advisor));
     if (!ui.prefs.advisor) {
       renderHints();
-      renderDeliverTrainer();
       return;
     }
     const st = ui.state;
@@ -1688,7 +1434,6 @@
       startSolver();
       renderSolver();
       renderHints();
-      renderDeliverTrainer();
       return;
     }
     renderHints();
@@ -1707,7 +1452,6 @@
     renderLog();
     renderGoal();
     renderAdvisor();
-    renderContracts();
     renderVault();
     renderTools();
     $('screen-game').classList.toggle('is-immersive', !!ui.prefs.immersive);
@@ -1734,7 +1478,7 @@
 
   // Dialogs that belong to one run close whenever the run is replaced.
   function closeRunDialogs() {
-    for (const id of ['dlg-choice', 'dlg-deliver', 'dlg-results']) closeDialog(id);
+    for (const id of ['dlg-choice', 'dlg-results']) closeDialog(id);
   }
 
   function startRun(opts) {
@@ -1751,34 +1495,20 @@
 
   function routeFromTitle(route) {
     const unfinished = ui.state && ui.state.phase !== 'ended';
-    if (route === 'drill' && !unfinished) startRun({ mode: 'drill', scenario: 'empty' });
-    else if (route === 'drill') openNewRun({ mode: 'drill', scenario: 'empty' });
-    else if (route === 'challenge') openNewRun({ mode: 'challenge' });
-    else openNewRun({ mode: 'drill', scenario: 'events' });
+    if (route === 'drill' && !unfinished) startRun({ scenario: 'empty' });
+    else if (route === 'drill') openNewRun({ scenario: 'empty' });
+    else openNewRun({ scenario: 'events' });
   }
 
   function openNewRun(preset) {
     const p = preset || {};
-    const mode = p.mode || (ui.state ? ui.state.mode : 'drill');
-    $(mode === 'challenge' ? 'new-mode-challenge' : 'new-mode-drill').checked = true;
     const scenario = p.scenario || (ui.state && ui.state.scenario) || 'empty';
-    const loadout = p.loadout || (ui.state && ui.state.loadout) || 'supply';
     $('scenario-options').innerHTML = Object.entries(T.SCENARIOS)
       .map(([key, s]) => `<label class="option"><input type="radio" name="scenario" value="${key}"${key === scenario ? ' checked' : ''}><strong>${esc(s.name)}</strong><small>${esc(s.text)}</small></label>`)
       .join('');
-    $('loadout-options').innerHTML = Object.entries(T.LOADOUTS)
-      .map(([key, k]) => `<label class="option"><input type="radio" name="loadout" value="${key}"${key === loadout ? ' checked' : ''}><strong>${esc(k.name)} · ${esc(k.level)}</strong><small>${esc(k.text)}</small></label>`)
-      .join('');
     $('new-seed').value = T.randomSeed();
-    syncNewMode();
     $('new-replace').hidden = !(ui.state && ui.state.phase !== 'ended');
     openDialog('dlg-new');
-  }
-
-  function syncNewMode() {
-    const challenge = $('new-mode-challenge').checked;
-    $('new-scenarios').hidden = challenge;
-    $('new-loadouts').hidden = !challenge;
   }
 
   // ---------- Dialogs ----------
@@ -1933,7 +1663,7 @@
     followUp(0);
   }
 
-  // ---------- Choices, delivery and results ----------
+  // ---------- Choices and results ----------
 
   function openChoice() {
     const st = ui.state;
@@ -1948,7 +1678,6 @@
         ? ['Starting instrument', 'Choose an instrument', 'Your run begins with one of these three instruments. It lasts the whole run.']
         : ['Objective met', 'Choose a tool', `${goal} is complete. Take one tool for the rest of the run.`],
       gift: ["Warden's Treasure", 'Choose a gift', 'A Rainbow reached the vault. Pick one gift; it takes effect at once.'],
-      refit: ['Refit', 'Choose a tool', 'Delivery complete. Take one tool for the rest of the run.'],
     }[choice.kind];
     $('choice-eyebrow').textContent = copy[0];
     $('choice-title').textContent = copy[1];
@@ -1956,85 +1685,7 @@
     $('choice-options').innerHTML = choice.options
       .map((id) => `<div class="refit-card"><strong>${esc(T.toolName(id))}</strong><p>${esc(T.toolText(id))}</p><button type="button" class="btn btn-primary" data-take="${id}">Take</button></div>`)
       .join('');
-    const refresh = $('btn-choice-refresh');
-    refresh.hidden = choice.kind !== 'refit';
-    refresh.disabled = !T.canRefresh(st);
-    refresh.textContent = choice.refreshed ? 'Offer already refreshed' : `Refresh offer · 1 voucher (${st.challenge ? st.challenge.vouchers : 0} left)`;
     openDialog('dlg-choice');
-  }
-
-  function openDeliver(preset) {
-    const st = ui.state;
-    if (!st || !st.challenge) return;
-    if (!windowOpen(st)) {
-      if (preset || !T.canOpenEarly(st)) return;
-      if (!run((s) => T.openEarlyDelivery(s))) return;
-    }
-    cargo.cells = new Set(preset ? preset.cells : []);
-    cargo.vault = new Set(preset ? preset.vaultIds : []);
-    cargo.escort = preset ? preset.escort : 'light';
-    renderDeliver();
-    openDialog('dlg-deliver');
-    renderDeliverTrainer();
-    scheduleCargoCheck();
-  }
-
-  function renderDeliver() {
-    const st = ui.state;
-    if (!windowOpen(st)) {
-      closeDialog('dlg-deliver');
-      return;
-    }
-    const ch = st.challenge;
-    const contract = T.currentContract(st);
-    const early = ch.window.early;
-    $('deliver-eyebrow').textContent = early ? 'Early heavy delivery' : `Delivery window · day ${st.day}`;
-    $('deliver-title').textContent = contract.name;
-    $('deliver-contract').innerHTML = `<div class="contract-head"><span class="contract-name">${esc(contract.name)}</span><span class="status is-active">${contract.heavy ? 'Heavy contract' : `Due day ${contract.deadline}`}</span></div><ul class="contract-lines">${contract.needs.map((n) => `<li>${esc(n)}</li>`).join('')}</ul><p class="contract-meta">${ch.vouchers} ${ch.vouchers === 1 ? 'voucher' : 'vouchers'} left · each inmate scores 2 to the power of its tier</p>`;
-    const rows = [
-      ...st.vault.map((v) => ({ kind: 'vault', key: v.id, tier: T.RAINBOW, beast: v.beast, where: 'vault' })),
-      ...st.cells.filter((c) => !c.sealed && c.inmate).map((c) => ({ kind: 'cell', key: c.n, tier: c.inmate.tier, beast: c.inmate.beast, where: L(c.n) })),
-    ].sort((a, b) => b.tier - a.tier);
-    $('deliver-inmates').innerHTML = rows.length
-      ? rows
-          .map((r) => {
-            const checked = r.kind === 'cell' ? cargo.cells.has(r.key) : cargo.vault.has(r.key);
-            return `<label class="pick t${r.tier}"><input type="checkbox" data-kind="${r.kind}" value="${r.key}"${checked ? ' checked' : ''}><b>${T.tierName(r.tier)}</b> ${T.beastName(r.beast)} · ${r.where}<small>P${T.PRESSURE[r.tier]} · ${2 ** r.tier} pts</small></label>`;
-          })
-          .join('')
-      : '<p class="field-note">Nobody is on the block or in the vault.</p>';
-    $('btn-deliver-skip').hidden = early;
-    $('btn-deliver-close').hidden = !early;
-    $('btn-deliver-best').disabled = !T.bestCargo(st);
-    updateDeliverStatus();
-  }
-
-  function updateDeliverStatus() {
-    const st = ui.state;
-    const ch = st.challenge;
-    const check = T.deliveryCheck(st, [...cargo.cells], [...cargo.vault], cargo.escort);
-    if (cargo.escort === 'light' && check.pressure > T.ESCORTS.light.cap) {
-      cargo.escort = 'heavy';
-      return updateDeliverStatus();
-    }
-    $('escort-light').checked = cargo.escort === 'light';
-    $('escort-heavy').checked = cargo.escort === 'heavy';
-    const picked = cargo.cells.size + cargo.vault.size;
-    const status = $('deliver-status');
-    if (check.ok) {
-      status.textContent = `Ready: ${check.points} points${check.bonus ? ` (including a ${check.bonus}-point bounty)` : ''}, pressure ${check.pressure} of ${T.ESCORTS[cargo.escort].cap}. Costs ${T.plural(check.cost, 'voucher')}, leaving ${ch.vouchers - check.cost}. These inmates leave the run.`;
-      status.className = 'deliver-status is-ok';
-    } else {
-      status.textContent = picked ? check.reason : 'Pick the inmates to send.';
-      status.className = 'deliver-status' + (picked ? ' is-bad' : '');
-    }
-    $('btn-deliver-confirm').disabled = !check.ok;
-    renderDeliverTrainer();
-    scheduleCargoCheck();
-  }
-
-  function confirmDeliver() {
-    if (run((s) => T.deliver(s, [...cargo.cells], [...cargo.vault], cargo.escort), { select: null })) closeDialog('dlg-deliver');
   }
 
   function openResults() {
@@ -2042,44 +1693,16 @@
     if (!st || !st.result) return;
     const r = st.result;
     $('results-eyebrow').textContent = `${modeName(st)} · seed ${st.seed}`;
-    const verdict = $('results-verdict');
-    const ch = st.challenge;
-    if (ch && ch.result) {
-      const res = ch.result;
-      verdict.hidden = false;
-      verdict.className = 'verdict' + (res.passed ? '' : ' is-fail');
-      const heading = res.grade === 'full' ? 'Full clear' : res.passed ? 'Challenge passed' : 'Challenge failed';
-      const reason = res.passed
-        ? `${T.plural(res.completed, 'contract')} delivered, including the heavy one.`
-        : res.completed >= 2
-          ? 'Two contracts delivered, but not the heavy one.'
-          : `${T.plural(res.completed, 'contract')} delivered. You need two, including the heavy one.`;
-      verdict.innerHTML = `${heading}<small>${esc(reason)}</small>`;
-      $('results-facts').innerHTML = facts([
-        ['Score', res.score],
-        ['Contracts', `${res.completed} / 3`],
-        ['Vouchers left', res.vouchers],
-        ['Rainbows', st.cache],
-        ['Best rarity', T.tierName(r.best), true],
-        ['Consumes', r.stats.devours],
-      ]);
-      $('results-contracts').innerHTML = `<div class="table-scroll"><table class="score-table"><thead><tr><th>Contract</th><th>Day</th><th>Result</th><th>Points</th></tr></thead><tbody>${ch.deliveries
-        .map((d, i) => `<tr><td>${esc(ch.contracts[i].name)}</td><td>${d.day}</td><td>${d.success ? `${d.early ? 'Delivered early' : 'Delivered'}, ${escortName(d.escort)}` : 'Missed'}</td><td>${d.points}</td></tr>`)
-        .join('')}<tr class="total"><td>Score</td><td></td><td></td><td>${res.score}</td></tr></tbody></table></div>`;
-    } else {
-      verdict.hidden = true;
-      $('results-contracts').innerHTML = '';
-      $('results-facts').innerHTML = facts([
-        ['Rainbows', r.roster.byTier[T.RAINBOW]],
-        [st.params.rewards ? 'Treasure gifts' : 'Treasure claims', r.cache],
-        ['Best rarity', T.tierName(r.best), true],
-        ['Inmates', r.roster.rows.length],
-        ['Patrols', r.stats.patrols],
-        ['Consumes', r.stats.devours],
-        ['Replaces', r.stats.swaps],
-        ['Executions', r.stats.executions],
-      ]);
-    }
+    $('results-facts').innerHTML = facts([
+      ['Rainbows', r.roster.byTier[T.RAINBOW]],
+      [st.params.rewards ? 'Treasure gifts' : 'Treasure claims', r.cache],
+      ['Best rarity', T.tierName(r.best), true],
+      ['Inmates', r.roster.rows.length],
+      ['Patrols', r.stats.patrols],
+      ['Consumes', r.stats.devours],
+      ['Replaces', r.stats.swaps],
+      ['Executions', r.stats.executions],
+    ]);
     let roster = '';
     for (let t = T.RAINBOW; t >= 0; t--) {
       const rows = r.roster.rows.filter((x) => x.tier === t);
@@ -2094,11 +1717,6 @@
     const st = ui.state;
     const r = st.result;
     const lines = [`Tartarus Simulator · ${modeName(st)} · seed ${st.seed}`, `Day ${r.day} of ${st.maxDays}${r.early ? ' (closed early)' : ''}`];
-    const ch = st.challenge;
-    if (ch && ch.result) {
-      lines.push(`${ch.result.passed ? 'Passed' : 'Failed'} · ${T.plural(ch.result.completed, 'contract')} delivered · score ${ch.result.score} · ${T.plural(ch.result.vouchers, 'voucher')} left`);
-      ch.deliveries.forEach((d, i) => lines.push(`${ch.contracts[i].name}: ${d.success ? `delivered on day ${d.day} (${d.points} points)` : 'missed'}`));
-    }
     lines.push(`Rainbows: ${st.cache} · Best: ${T.tierName(r.best)}`);
     for (let t = T.RAINBOW; t >= 0; t--) {
       const rows = r.roster.rows.filter((x) => x.tier === t);
@@ -2122,12 +1740,10 @@
 
   function fillLab() {
     const st = ui.state;
-    const locked = !st || st.mode !== 'drill' || st.phase === 'ended';
+    const locked = !st || st.phase === 'ended';
     const note = $('lab-locked');
     note.hidden = !locked;
-    if (!st) note.textContent = 'Start a drill to use the scene editor.';
-    else if (st.mode !== 'drill') note.textContent = 'The contract challenge uses fixed rules, so the scene editor is off. Start a drill to edit scenes.';
-    else note.textContent = 'This run is over. Start a new drill to edit scenes.';
+    note.textContent = st ? 'This run is over. Start a new drill to edit scenes.' : 'Start a drill to use the scene editor.';
     $('lab-editor').hidden = locked;
     if (!locked) {
       renderLabGrid();
@@ -2362,12 +1978,8 @@
       ui.pending = { kind: 'hunt' };
       render();
     });
-    $('btn-deliver').addEventListener('click', () => openDeliver());
     $('btn-undo').addEventListener('click', undo);
     $('btn-end').addEventListener('click', askEndDay);
-    $('contract-list').addEventListener('click', (e) => {
-      if (e.target.closest('[data-early]')) openDeliver();
-    });
 
     $('btn-menu-new').addEventListener('click', () => {
       closeDialog('dlg-menu');
@@ -2378,14 +1990,12 @@
       showScreen('title');
     });
 
-    $('new-mode-drill').addEventListener('change', syncNewMode);
-    $('new-mode-challenge').addEventListener('change', syncNewMode);
     $('btn-reseed').addEventListener('click', () => ($('new-seed').value = T.randomSeed()));
     $('form-new').addEventListener('submit', (e) => {
       e.preventDefault();
       const data = new FormData(e.target);
       closeDialog('dlg-new');
-      startRun({ mode: data.get('mode'), scenario: data.get('scenario'), loadout: data.get('loadout'), seed: $('new-seed').value });
+      startRun({ scenario: data.get('scenario'), seed: $('new-seed').value });
     });
 
     $('btn-run-undo').addEventListener('click', () => {
@@ -2472,8 +2082,7 @@
       ui.labParams = readParamsForm();
       store.set(KEYS.params, ui.labParams);
       closeDialog('dlg-lab');
-      const scenario = ui.state && ui.state.mode === 'drill' ? ui.state.scenario : 'empty';
-      startRun({ mode: 'drill', scenario });
+      startRun({ scenario: ui.state ? ui.state.scenario : 'empty' });
       toast('Practice values saved. A new drill has started.', true);
     });
 
@@ -2484,51 +2093,10 @@
       // Shows the next waiting choice, or closes when none is left.
       openChoice();
     });
-    $('btn-choice-refresh').addEventListener('click', () => {
-      if (run((s) => T.refreshRefit(s))) openChoice();
-    });
 
-    $('deliver-inmates').addEventListener('change', (e) => {
-      const input = e.target;
-      const set = input.dataset.kind === 'vault' ? cargo.vault : cargo.cells;
-      if (input.checked) set.add(Number(input.value));
-      else set.delete(Number(input.value));
-      updateDeliverStatus();
-    });
-    $('escort-light').addEventListener('change', () => {
-      cargo.escort = 'light';
-      updateDeliverStatus();
-    });
-    $('escort-heavy').addEventListener('change', () => {
-      cargo.escort = 'heavy';
-      updateDeliverStatus();
-    });
-    $('btn-deliver-best').addEventListener('click', () => {
-      const best = T.bestCargo(ui.state);
-      if (!best) return;
-      cargo.cells = new Set(best.cells);
-      cargo.vault = new Set(best.vaultIds);
-      cargo.escort = best.escort;
-      renderDeliver();
-    });
-    $('btn-deliver-confirm').addEventListener('click', confirmDeliver);
-    $('btn-deliver-trainer').addEventListener('click', () => {
-      const rec = ui.state && recommendation(ui.state);
-      if (!rec) return;
-      if (rec.action.type === 'deliver') loadCargo(rec.action);
-      else if (rec.action.type === 'skip' && run((s) => T.skipDelivery(s), { select: null })) closeDialog('dlg-deliver');
-      else if (rec.action.type === 'close' && run((s) => T.cancelEarlyDelivery(s))) closeDialog('dlg-deliver');
-    });
-    $('btn-deliver-trainer-on').addEventListener('click', () => setPref('advisor', true));
     $('btn-trainer-play').addEventListener('click', () => {
       const rec = ui.state && recommendation(ui.state);
       if (rec) playSolverMove(rec.action);
-    });
-    $('btn-deliver-skip').addEventListener('click', () => {
-      if (run((s) => T.skipDelivery(s), { select: null })) closeDialog('dlg-deliver');
-    });
-    $('btn-deliver-close').addEventListener('click', () => {
-      if (run((s) => T.cancelEarlyDelivery(s))) closeDialog('dlg-deliver');
     });
 
     $('btn-results-copy').addEventListener('click', copySummary);
@@ -2570,16 +2138,22 @@
     fillHandbookTools();
     bind();
     const saved = data.save || store.get(KEYS.save);
+    let lost = '';
     if (saved) {
       try {
         ui.state = T.deserialize(saved);
         ui.history = Array.isArray(data.history) ? data.history.filter((h) => typeof h === 'string').slice(-HISTORY_LIMIT) : [];
       } catch (e) {
         ui.state = null;
+        // A contract challenge saved before that mode was removed can't load
+        // any more, so the engine's message says why the run is gone.
+        const raw = saved.app === 'tartarus-sim' ? saved.state : saved;
+        if (raw && raw.mode === 'challenge') lost = e.message;
       }
     }
     applyPrefs();
     showScreen(data.screen === 'game' ? 'game' : 'title');
+    if (lost) toast(lost);
     requestAnimationFrame(() => $('board').classList.add('is-live'));
   }
 

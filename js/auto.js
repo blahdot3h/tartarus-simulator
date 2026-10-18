@@ -100,6 +100,7 @@
       if (read.ok && mine === newest) answer({ state: 'used', asked: A.useObjective(read) });
       return;
     }
+    let offerMissed = '';
     if (m.kind === 'instruments') {
       // The offer that starts a run comes with the day-0 line (m.fresh); an
       // objective's reward offers one mid-run, on the board as it is. A
@@ -107,12 +108,18 @@
       pickFresh = !!m.fresh || (before === 'instruments' && pickFresh);
       const fresh = pickFresh;
       const read = await A.readPick(bitmap);
-      answer({ read });
-      if ((!read.ok || read.unsure) && A.langMissed) A.langMissed('instrument offer', bitmap, read.ok ? `${read.unsure} of the cards not read` : read.reason);
-      if (!read.ok || mine !== newest) return;
-      const asked = A.usePick(read, fresh);
-      answer({ state: 'used', asked });
-      return;
+      if (read.ok) {
+        answer({ read });
+        if (read.unsure && A.langMissed) A.langMissed('instrument offer', bitmap, `${read.unsure} of the cards not read`);
+        if (mine !== newest) return;
+        const asked = A.usePick(read, fresh);
+        answer({ state: 'used', asked });
+        return;
+      }
+      // No offer in the picture: the log's line came, but the screen was
+      // already the board (report 327: the patrol's doors, read right,
+      // while the advice stayed on an offer's pick). It's read as a board.
+      offerMissed = read.reason || 'not read';
     }
     // A picture the log didn't name (Take a picture now) may be the
     // instrument offer: at least two of its cards read surely, which no
@@ -132,6 +139,8 @@
       }
     }
     const read = await A.readFrame(bitmap);
+    // Neither an offer nor a board: an offer in another language, maybe.
+    if (!read.ok && offerMissed && A.langMissed) A.langMissed('instrument offer', bitmap, offerMissed);
     // A picture with no board in it: maybe the Warden's Treasure, read by
     // its printed text. A board's picture can catch it too (report 55).
     if (!read.ok && !read.skipped && A.readTreasure) {
@@ -152,8 +161,20 @@
     if (A.langBoard) A.langBoard(bitmap);
     lastBoardAt = Date.now();
     answer({ state: 'used' });
+    // Door cards or a decision row show only on the board itself, never
+    // through View Prison Status: no Treasure is open, so a tally of picks
+    // still waiting has gone stale (report 302: several Rainbows in a row,
+    // then every board taken as the one behind a Treasure, and its gift
+    // advised again). The board is advised as it is.
+    if (m.treasureView && read.controls) {
+      if (A.giftsDone) A.giftsDone();
+      if (A.ask()) answer({ asked: true });
+      return;
+    }
     // The board behind a Warden's Treasure: the gift advice uses it.
-    if (m.treasureView) {
+    // View Prison Status, read from the picture, where the log's counts
+    // missed the Treasure (report 325).
+    if (m.treasureView || read.statusView) {
       if (A.useTreasure('view')) answer({ asked: true });
       return;
     }
@@ -173,9 +194,20 @@
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   function renderFollow() {
     if (!bar) return;
-    bar.hidden = !C.agreed();
+    // Agreed to the page before it was updated: the bar stays, to say why
+    // nothing comes (report 315: Take a picture now was gone, unexplained).
+    const before = !C.agreed() && !!C.agreedBefore && C.agreedBefore();
+    bar.hidden = !C.agreed() && !before;
     if (bar.hidden) return;
     const link = '<a href="follow.html#follow" target="tartarus-follow">the Auto Screenshot Mode page</a>';
+    if (before) {
+      bar.className = 'az-follow is-warn';
+      bar.title = '';
+      barText.innerHTML = `Auto Screenshot Mode was updated, and it’s off until you agree again. Open <a href="follow.html#agree" target="tartarus-follow">the Auto Screenshot Mode page</a>, read what changed and agree, then share the game window again. Until then, no pictures come here and Take a picture now is off.`;
+      now.disabled = true;
+      now.title = 'Agree again on the Auto Screenshot Mode page first.';
+      return;
+    }
     let ok = false;
     let warn = false;
     let quiet = false;

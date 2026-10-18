@@ -37,9 +37,11 @@ for (const [id, v] of Object.entries(REF.toolNames)) if (v.sim) readerId[v.sim] 
 const tools = [];
 for (const [file, ids] of Object.entries(TRUTH.picks || {})) {
   const img = P.read(path.join(DIR, file));
+  // At the cards' size the reader finds (smaller cards on some screens).
+  const ui = S.scanPick(img, REF, null).ui;
   ids.forEach((sim, i) => {
     if (!T.TOOLS[sim]) throw new Error(`${file}: ${sim} isn't an instrument the simulator knows`);
-    const box = S.pickArtBox(img, i - 1);
+    const box = S.pickArtBox(img, i - 1, ui);
     if (!box) {
       console.log(`${file}: card ${i + 1} (${sim}) wasn't found, left out`);
       return;

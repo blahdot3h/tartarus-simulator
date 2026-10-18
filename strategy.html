@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600;700&family=Big+Shoulders+Stencil+Display:wght@600;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="css/style.css?v=20261017h">
+<link rel="stylesheet" href="css/style.css?v=20261018m">
 <style>
   /* The strategy guide: a long read in the simulator's own look. */
   .guide {
@@ -394,17 +394,6 @@
     max-width: 78ch;
   }
 
-  /* A pointer to the contract challenge, under the headline numbers. */
-  .jump {
-    max-width: 78ch;
-    margin: 0 0 30px;
-    padding: 10px 14px;
-    border-left: 3px solid var(--teal);
-    background: var(--slab);
-    font-size: 15px;
-    color: var(--chalk);
-  }
-
   .method {
     padding-top: 30px;
     border-top: 1px solid var(--iron);
@@ -445,19 +434,18 @@
     <div class="stat"><b>Day <span data-g="firstDay"></span></b><span>when the first Rainbow usually lands</span></div>
   </div>
   <p class="note basis">Data basis: the default drill, with a pick of 3 random instruments to start, another pick for meeting the run's objective (King of the Caged or Prison Walk), and a Warden's Treasure gift per Rainbow. The headline numbers come from <span data-g="headlineRuns"></span> runs, with margins under ±<span data-g="ci"></span>. Generated <span data-g="generated"></span>.</p>
-  <p class="jump" id="jump-challenge" hidden>Playing the contract challenge? <a href="#challenge">Jump to the convoy rules</a>: what to send, and how to pass.</p>
 
   <section class="guide-section">
     <h2>The short version</h2>
     <ol class="rules">
-      <li><strong>Consume every day you can.</strong><span>Waiting to build a bigger chain cost Rainbows: <span data-g="wait2"></span> per run with a small threshold and <span data-g="wait5"></span> with a large one, against <span data-g="full"></span> when you always consume (no tools).<span class="rule-note"><b>The one exception: don't break a prey mark.</b> When a Lion marks a prey of its own rarity, both rise a tier every morning for free until the mark runs out. Eating the marked prey ends the mark, and so does letting the marked Lion consume, since it usually turns into another beast. Either way you trade several free tiers for one. A consume almost never loses value otherwise: two inmates of one rarity become one a tier higher, which is worth more than the pair. In the contract challenge, also keep the inmates the next contract needs.</span></span></li>
+      <li><strong>Consume every day you can.</strong><span>Waiting to build a bigger chain cost Rainbows: <span data-g="wait2"></span> per run with a small threshold and <span data-g="wait5"></span> with a large one, against <span data-g="full"></span> when you always consume (no tools).<span class="rule-note"><b>The one exception: don't break a prey mark.</b> When a Lion marks a prey of its own rarity, both rise a tier every morning for free until the mark runs out. Eating the marked prey ends the mark, and so does letting the marked Lion consume, since it usually turns into another beast. Either way you trade several free tiers for one. A consume almost never loses value otherwise: two inmates of one rarity become one a tier higher, which is worth more than the pair.</span></span></li>
       <li><strong>Replace the warden's low-tier inmate when there's no better consume.</strong><span><span data-g="swapTiers"></span>. A fresh roll is worth more on average. <span data-g="swapNote"></span></span></li>
       <li><strong>Chain reactions are a close call.</strong><span>Opening every door on the next walk floods the block with new inmates, but it also opens doors you might rather have kept. <span data-g="chainNote"></span> The Trainer's live check compares both each time.</span></li>
       <li><strong>Accept an Execution only when it gains more than it removes.</strong><span>Count what it would wipe out. Always accepting gave <span data-g="alwaysExec"></span> and never accepting <span data-g="neverExec"></span>, against <span data-g="full"></span> when you check first.</span></li>
       <li><strong>Accept the events that only give.</strong><span>Behind Closed Doors makes the inmate behind the door a Supreme of the scarcest beast on the block, one step from Rainbow; skip it only when that inmate already is a Supreme. Ravenous Appetite, High-Risk Convict, Crow Whispers and the "Treasure" Hunt never cost anything.</span></li>
       <li><strong>Stop at the office when it pays.</strong><span>The warden's office can be a destination. Bestow raises 1 random inmate a tier; Instigate puts a special event on a random cell, behind a locked door or beside an inmate (2 when the board has none). Pick by what the block needs, as the Trainer does: <span data-g="full"></span> per run, against <span data-g="alwaysBestow"></span> always taking Bestow and <span data-g="alwaysInstigate"></span> always taking Instigate.</span></li>
       <li><strong>Keep opening doors, and walk far.</strong><span>New inmates are the raw material for every chain, and a locked door usually beats walking to an inmate with nothing to eat. Walking farther pays: <span data-g="full"></span> per run against <span data-g="shortWalks"></span> for short walks, with six cells in reach, Prison Walk counting tiles and the office on the way around.</span></li>
-      <li><strong>Know what keeps a chain going.</strong><span>Below Legendary each beast has one meal, so each beast waiting at the next tier covers one of the four beasts the eater can re-roll into. A tier holding a Mammoth, a Lion, a Wolf and a Rat guarantees the next bite. From Legendary up, Mammoths also eat Wolves and Lions also eat Rats, which keeps those chains going more often. The Trainer's chain odds do this math for you when you pick the first meal.</span></li>
+      <li><strong>Know what keeps a chain going.</strong><span>Mammoths and Lions eat two kinds, Wolves and Rats one, so a Wolf or a Rat waiting at the next tier feeds two of the four beasts the eater can re-roll into, and a Lion or a Mammoth one. A tier holding a Mammoth, a Rat and a Lion or a Wolf guarantees the next bite. The Trainer's chain odds do this math for you when you pick the first meal.</span></li>
       <li><strong>Take <span data-g="tool1"></span> or <span data-g="tool2"></span> when offered.</strong><span><span data-g="toolNote"></span></span></li>
       <li><strong>At the Warden's Treasure, take what fits the board.</strong><span><span data-g="giftNote"></span></span></li>
     </ol>
@@ -468,7 +456,7 @@
     <p>Every day runs in the same order. Here is what the strategy does at each step.</p>
     <ol class="steps-day">
       <li><b>Patrol</b><div><p>Pick one of the three destinations. A locked door usually wins: it adds a new inmate, who may consume today from the warden's cell. Go to a known inmate instead when it has a strong consume waiting. A door with an event badge is a bonus. Prefer the farther destination when they're close: it counts toward Prison Walk, and with the Long-Chained Shackles a walk of 4 or more cells can raise an inmate a tier. Don't open a rat nest before it hatches.</p></div></li>
-      <li><b>Event</b><div><p>Accept Ravenous Appetite, High-Risk Convict, Crow Whispers, Taste of Freedom and the Usurpations, and Behind Closed Doors unless its inmate is already a Supreme. The "Treasure" Hunt has only Confirm: afterwards, the locked doors it leaves dark hold Rare or better. Chain reactions are the close call above. For an Execution, count the inmates it would remove against the tiers the executioner gains, and accept only if you come out ahead.</p></div></li>
+      <li><b>Event</b><div><p>Accept Ravenous Appetite, High-Risk Convict, Crow Whispers, Taste of Freedom, Extra Portion and the Usurpations, and Behind Closed Doors unless its inmate is already a Supreme. The "Treasure" Hunt has only Confirm: afterwards, the locked doors it leaves dark hold Rare or better. Chain reactions are the close call above. For an Execution, count the inmates it would remove against the tiers the executioner gains, and accept only if you come out ahead.</p></div></li>
       <li><b>Consume</b><div><p>If the warden's inmate has a target, consume. Pick the first meal whose chain is worth the most: the Trainer shows each option's chain odds. After that bite, your game asks for each next meal, and its Cancel stops the chain. Going on is almost always right, so stop only when the Trainer says so. When the eater has more than one meal, pick the one whose next tier still has food for the beast it may re-roll into.</p></div></li>
       <li><b>Replace</b><div><p>If the warden's inmate is low-tier and has nothing worth eating, replace it. A day has a Replace or a consume, not both, so a good consume comes first.</p></div></li>
       <li><b>End the day</b><div><p>Once nothing in the warden's cell can gain, end the day. The next morning, prey marks grow, nests hatch, and new destinations are drawn.</p></div></li>
@@ -477,7 +465,7 @@
 
   <section class="guide-section">
     <h2>Chains: how many beasts you need</h2>
-    <p>After every bite the eater rises a tier and re-rolls into a random beast. The chain continues if that new beast has something to eat at its new tier. Each beast eats exactly one other: a Mammoth needs a Lion, a Lion needs a Wolf, a Wolf needs a Rat, and a Rat needs a Mammoth. So each beast waiting at a tier covers one of the four possible re-rolls.</p>
+    <p>After every bite the eater rises a tier and re-rolls into a random beast. The chain continues if that new beast has something to eat at its new tier. A Mammoth eats Lions and Wolves, a Lion Wolves and Rats, a Wolf Rats, and a Rat Mammoths. So a Wolf or a Rat waiting at a tier feeds two of the four possible re-rolls, a Lion or a Mammoth one, and a Mammoth, a Rat and a Lion or a Wolf together feed all four.</p>
     <h3>Chance the chain finds its next meal at a tier</h3>
     <div class="sets" id="sets"></div>
 
@@ -519,7 +507,7 @@
           <tr><td>Hangman's Noose</td><td>The new inmate is never Normal or Magic, so every Replace is an upgrade.</td></tr>
           <tr><td>Long-Chained Shackles</td><td>A walk of 4 or more cells has a 40% chance to raise a random inmate a tier. With six cells in reach, most mornings offer a walk that long.</td></tr>
           <tr><td>Executioner's Blacklist</td><td>Once 5 or fewer cells are still locked, each door a patrol opens raises 2 random inmates a tier.</td></tr>
-          <tr><td>Raging Beast's Agonizing Muzzle</td><td>A consume gains 2 extra tiers when 4 or fewer inmates are left on the block after the meal.</td></tr>
+          <tr><td>Raging Beast's Agonizing Muzzle</td><td>A consume gains 2 extra tiers when 4 or fewer inmates are on the block before it, its meal included.</td></tr>
           <tr><td>Avenger's Casket</td><td>A consume can open a fresh meal at the eater's new rarity, which stretches chains.</td></tr>
           <tr><td>Ferocious Beast's Ravenous Chains</td><td>Each morning the highest-rarity inmate removes both its neighbours on the ring, with a 40% chance of an extra tier for each.</td></tr>
           <tr><td>Skewered Rat Heads</td><td>Rats can eat Rats, and a Rat's consume gains an extra tier.</td></tr>
@@ -578,64 +566,11 @@
     </div>
   </section>
 
-  <section class="guide-section" id="challenge">
-    <h2>The contract challenge</h2>
-    <p>Twelve days, three contracts and 6 vouchers. You pass by delivering two contracts, one of them the heavy contract, which needs a Supreme or a vaulted Rainbow. Every inmate you send scores 2 to the power of its tier and adds about twice that in convoy pressure. So a light escort (1 voucher, pressure up to 36) carries at most 18 points, and a heavy escort (3 vouchers, up to 72) at most 36. A run tops out near 72 points, plus any bounty.</p>
-    <div class="stats">
-      <div class="stat"><b data-c="pass"></b><span>of runs pass with the trained strategy</span></div>
-      <div class="stat"><b data-c="points"></b><span>contract points per run on average</span></div>
-      <div class="stat"><b data-c="full"></b><span>of runs deliver all three contracts</span></div>
-      <div class="stat"><b data-c="naivePass"></b><span>pass when every convoy just sends the most points</span></div>
-    </div>
-    <p class="note basis">Data basis: <span data-c="runs"></span> simulated challenge runs, split evenly across the three starts, played by a strategy tuned for the challenge. It plays for passing first, then points: 1% of pass chance counts as 10 points. Each variant below ran <span data-c="habitRuns"></span> runs. Generated <span data-c="generated"></span>.</p>
-
-    <h3>Convoy rules</h3>
-    <ol class="rules">
-      <li><strong>Never spend the heavy contract’s last voucher.</strong><span>The heavy contract needs at least one voucher, and the run can’t pass without it. Sending the most points on every contract can spend all six before day 12. That habit passed only <span data-c="mostPointsAll"></span> of runs.</span></li>
-      <li><strong>Send the first two contracts by light escort.</strong><span>That keeps 3 vouchers for the heavy contract, enough for a heavy escort: the only way to ship a Rainbow (pressure 65), and the way to 36 points. Allowing heavy escorts on the first two passed <span data-c="reserve1"></span>, against <span data-c="pass"></span>.</span></li>
-      <li><strong>Send only what the contract needs.</strong><span>On the first two contracts, load the cheapest inmates that meet it, plus any spare Normals, and keep everything else for later. <span data-c="spareText"></span></span></li>
-      <li><strong>Get ready over the last <span data-c="needDays"></span> before each delivery window.</strong><span>Check what the next contract needs and play for it: open doors when a Work gang or Mixed convoy needs more inmates, and hold on to Rares and Legendaries for the day-8 contract. Ignoring the next contract passed <span data-c="noNeed"></span>, against <span data-c="pass"></span>.</span></li>
-      <li><strong>Fill the heavy convoy.</strong><span>The heavy contract ends the run, so send the most points a heavy escort can carry: two Supremes and a Rare, or a Rainbow with a Magic and a Normal. <span data-c="earlyText"></span></span></li>
-    </ol>
-
-    <h3>What each habit is worth</h3>
-    <p>Pass rate with one habit changed and everything else kept the same, with points per run on the right. Pass rates within about 0.2% of each other are within the margin of error.</p>
-    <div class="bars" id="c-habits"></div>
-
-    <h3>Points against passing</h3>
-    <p>Richer cargo on the first two contracts scores more there but leaves less to build the heavy convoy with. Each row is a different cargo habit for those two contracts, with every other choice the same:</p>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Cargo on the first two contracts</th><th class="num">Contract 1</th><th class="num">Contract 2</th><th class="num">Points per run</th><th class="num">Pass</th></tr></thead>
-        <tbody id="c-frontier"></tbody>
-      </table>
-    </div>
-
-    <h3>The contracts</h3>
-    <p>Each slot draws one contract from the seed. How often the trained strategy delivered each, and its average points:</p>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Contract</th><th>Due</th><th>Needs</th><th class="num">Delivered</th><th class="num">Points</th></tr></thead>
-        <tbody id="c-contracts"></tbody>
-      </table>
-    </div>
-
-    <h3>By start</h3>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Start</th><th class="num">Pass</th><th class="num">All three</th><th class="num">Points</th></tr></thead>
-        <tbody id="c-starts"></tbody>
-      </table>
-    </div>
-    <p><span data-c="failText"></span></p>
-    <p>In a run, the Trainer does this for you. When a delivery window opens, it shows its convoy and stars the inmates to send. Then it plays out every convoy it would consider, plus the one you’re loading, so you can see what a different cargo would cost before you send it.</p>
-  </section>
-
   <section class="guide-section">
     <div class="cta">
       <h2>Practice it</h2>
       <p>Start a Rules drill and press <strong>Trainer</strong> in the top bar. It recommends a move for every decision and marks it on the board. It checks the move with hundreds of live playouts from your exact position, and grades each move you make, so you can see where your play differs from these numbers.</p>
-      <p>Playing live? The board analyzer takes your board as it is in your game, with your tools and contracts, and gives the same advice for that exact position.</p>
+      <p>Playing live? The board analyzer takes your board as it is in your game, with your tools, and gives the same advice for that exact position.</p>
       <div class="cta-actions">
         <a class="btn btn-primary" href="./">Open the simulator</a>
         <a class="btn" href="analyze.html">Analyze my board</a>
@@ -649,10 +584,10 @@
   </footer>
 </main>
 
-<script src="js/guide-data.js?v=20261017h"></script>
-<script src="js/tool-combos.js?v=20261017h"></script>
-<script src="js/board.js?v=20261017h"></script>
-<script src="js/update.js?v=20261017h"></script>
+<script src="js/guide-data.js?v=20261018m"></script>
+<script src="js/tool-combos.js?v=20261018m"></script>
+<script src="js/board.js?v=20261018m"></script>
+<script src="js/update.js?v=20261018m"></script>
 <script>
   // Fills the guide from js/guide-data.js, generated by
   // node tools/strategy-sim.js guide.
@@ -674,10 +609,12 @@
     const tiers = ['Normal', 'Magic', 'Rare', 'Legendary', 'Supreme'];
     const tierList = (max) => (max < 0 ? 'none' : tiers.slice(0, max + 1).join(', ').replace(/, ([^,]*)$/, ' and $1'));
     const tools = G.tools;
-    // Tools that did worse than none, from the worst: a small loss (under
-    // 0.02 Rainbows) reads as "slightly".
+    // Tools that did worse than none, from the worst: a loss inside the
+    // measurement's margin says so, and a small one (under 0.02 Rainbows)
+    // reads as "slightly".
+    const margin = (habit('full') && habit('full').ci) || 0;
     const worse = tools.filter((t) => t.delta < 0).reverse();
-    const named = worse.map((t) => `the ${t.name}${-t.delta < 0.02 ? ' (slightly)' : ''}`);
+    const named = worse.map((t) => `the ${t.name}${-t.delta < margin ? ' (within the margin)' : -t.delta < 0.02 ? ' (slightly)' : ''}`);
     const worseNote = !worse.length ? ''
       : worse.length === 1 ? ` The ${worse[0].name} was the only tool that made things worse.`
         : ` Some tools made things worse: ${named.slice(0, -1).join(', ')} and ${named[named.length - 1]}.`;
@@ -738,18 +675,29 @@
     };
     for (const el of document.querySelectorAll('[data-g]')) el.textContent = V[el.dataset.g] !== undefined ? V[el.dataset.g] : '?';
 
-    // Beast sets and the share of re-rolls that find food. Each beast has one
-    // meal, so only the number of different beasts matters: one card per count.
+    // Beast sets and the share of re-rolls that find food: the eater
+    // re-rolls into one of the four beasts, each with its meals.
     const names = { Mammoth: 'mammoth', Lion: 'lion', Wolf: 'wolf', Rat: 'rat' };
-    const card = (beasts, odds, label) => `<div class="set${odds === 1 ? ' is-full' : ''}"><div class="set-icons">${beasts.map((b) => `<span class="tok t2" title="${b}">${PORTRAITS[names[b]]}</span>`).join('')}</div><div class="set-odds">${Math.round(100 * odds)}%</div><div class="set-name">${esc(label)}</div></div>`;
-    const counted = ['All four beasts', 'Any three beasts', 'Any two beasts', 'Any one beast'];
-    document.getElementById('sets').innerHTML = [4, 3, 2, 1].map((k, i) => card(['Mammoth', 'Lion', 'Wolf', 'Rat'].slice(0, k), k / 4, counted[i])).join('');
+    const MEALS = { Mammoth: ['Lion', 'Wolf'], Lion: ['Wolf', 'Rat'], Wolf: ['Rat'], Rat: ['Mammoth'] };
+    const fed = (set) => Object.keys(MEALS).filter((b) => MEALS[b].some((m) => set.includes(m))).length / 4;
+    const card = (beasts, label) => {
+      const odds = fed(beasts);
+      return `<div class="set${odds === 1 ? ' is-full' : ''}"><div class="set-icons">${beasts.map((b) => `<span class="tok t2" title="${b}">${PORTRAITS[names[b]]}</span>`).join('')}</div><div class="set-odds">${Math.round(100 * odds)}%</div><div class="set-name">${esc(label)}</div></div>`;
+    };
+    const sets = [
+      [['Mammoth', 'Wolf', 'Rat'], 'A Mammoth, a Rat and a Wolf (or a Lion)'],
+      [['Wolf', 'Rat'], 'A Wolf and a Rat'],
+      [['Wolf'], 'A Wolf or a Rat alone'],
+      [['Lion'], 'A Lion or a Mammoth alone'],
+    ];
+    document.getElementById('sets').innerHTML = sets.map(([beasts, label]) => card(beasts, label)).join('');
 
     // Chain to Rainbow odds by eater tier, from the runs' devours.
     const stairRows = [];
     for (let t = 4; t >= 0; t--) {
       const rows = G.stairs.filter((s) => s.key.startsWith(`${t}:`)).sort((a, b) => b.rainbow - a.rainbow);
-      const keep = t === 4 ? rows.slice(0, 1) : t === 3 ? rows : rows.filter((r) => r.n >= 5000).slice(0, t === 2 ? 4 : 2);
+      // Below Legendary, the cases with at least 1 consume per 20 runs.
+      const keep = t === 4 ? rows.slice(0, 1) : t === 3 ? rows : rows.filter((r) => r.n >= G.headlineRuns / 20).slice(0, t === 2 ? 4 : 2);
       for (const r of keep) {
         const fed = r.key.split(':')[1];
         const above = fed ? fed.split('').map((d, i) => `${d} at ${tiers[t + 1 + i]}`).join(', ') : 'Any meal makes Rainbow';
@@ -812,83 +760,6 @@
       ["This guide's strategy", C.notools.tuned, C.rewards.tuned, true],
     ].map(([label, a, b, key]) => `<tr${key ? ' class="is-key"' : ''}><td>${label}</td><td class="num">${two(a.rainbowsPerRun)}</td><td class="num">${two(b.rainbowsPerRun)}</td></tr>`).join('');
 
-    // The contract challenge, from node tools/strategy-sim.js cguide.
-    const CH = G.challenge;
-    const chSection = document.getElementById('challenge');
-    if (!CH) {
-      chSection.hidden = true;
-      return;
-    }
-    document.getElementById('jump-challenge').hidden = false;
-    const ch = (id) => CH.habits.find((h) => h.id === id);
-    const P = CH.headline;
-    const trained = ch('full');
-    const rate = (v) => `${(100 * v).toFixed(1)}%`;
-    const pts = (v) => v.toFixed(1);
-    const light = ch('lightMost');
-    const anyEarly = ch('earlyAny');
-    const never = ch('neverEarly');
-    const whenFull = ch('earlyFull');
-    const same = (a, b) => Math.abs(a.passRate - b.passRate) <= Math.hypot(a.passCi95, b.passCi95) && Math.abs(a.points - b.points) < 0.3;
-    let earlyText;
-    if (never) {
-      earlyText = `From day 9, once the heavy convoy is full, ship it early: waiting can’t add points. ${same(never, trained) ? 'Waiting until day 12 did no better' : `Never shipping early passed ${rate(never.passRate)} with ${pts(never.points)} points`}, and shipping as soon as it qualifies cost points (${pts(anyEarly.points)} per run, against ${pts(trained.points)}).`;
-    } else {
-      earlyText = `You can wait for day 12: ${same(whenFull, trained) ? 'shipping early once the escort was full did no better' : `shipping early once the escort was full passed ${rate(whenFull.passRate)} with ${pts(whenFull.points)} points`}, and shipping as soon as it qualifies cost points (${pts(anyEarly.points)} per run, against ${pts(trained.points)}).`;
-    }
-    const fails = [];
-    if (P.fail.noSupreme >= 0.001) fails.push(`${rate(P.fail.noSupreme)} of runs never reach a Supreme or Rainbow by day 12`);
-    if (P.fail.twoMissed >= 0.001) fails.push(`${rate(P.fail.twoMissed)} ship the heavy contract but miss both early ones`);
-    if (P.fail.rainbowStuck >= 0.001) fails.push(`${rate(P.fail.rainbowStuck)} hold only a vaulted Rainbow without the vouchers to ship it`);
-    if (P.fail.noVouchers >= 0.001) fails.push(`${rate(P.fail.noVouchers)} run out of vouchers`);
-    const CV = {
-      pass: rate(P.passRate),
-      points: pts(P.points),
-      full: rate(P.fullRate),
-      naivePass: rate(ch('mostPointsAll').passRate),
-      runs: CH.headlineRuns.toLocaleString(),
-      habitRuns: CH.habitRuns.toLocaleString(),
-      generated: CH.generated,
-      mostPointsAll: rate(ch('mostPointsAll').passRate),
-      reserve1: rate(ch('reserve1').passRate),
-      noNeed: rate(ch('noNeed').passRate),
-      needDays: `${CH.params.needDays} ${CH.params.needDays === 1 ? 'day' : 'days'}`,
-      spareText: `Sending the most a light escort can carry scored ${pts(light.points)} points per run but passed ${rate(light.passRate)}, against ${pts(trained.points)} points and ${rate(trained.passRate)} when sending only what’s needed.`,
-      earlyText,
-      failText: fails.length ? `Why runs still fail: ${fails.join('; ')}.` : '',
-    };
-    for (const el of chSection.querySelectorAll('[data-c]')) el.textContent = CV[el.dataset.c] !== undefined ? CV[el.dataset.c] : '?';
-    document.querySelector('#jump-challenge').insertAdjacentText('beforeend', ` The trained strategy passes ${CV.pass} of runs.`);
-
-    // The trained strategy first, then the variants by pass rate.
-    const cHabits = [trained, ...CH.habits.filter((h) => h !== trained).sort((a, b) => b.passRate - a.passRate)];
-    bars('c-habits', cHabits.map((h) => ({ label: h.label, value: h.passRate, sub: `${pts(h.points)} pts`, key: h.id === 'full', bad: h.passRate < trained.passRate - 0.1 })), 1, rate);
-
-    const keepNames = { 0: 'The most points', 0.25: 'Fill the escort, mostly for points', 0.5: 'Fill the escort, lowest tiers first', 0.75: 'Fill it with Normals, Magics and Rares', 1: 'What qualifies, plus spare Normals', 1.5: 'Only what qualifies' };
-    document.getElementById('c-frontier').innerHTML = CH.frontier
-      .map((r) => {
-        const mine = r.keep === CH.params.keep1 && r.keep === CH.params.keep2;
-        return `<tr${mine ? ' class="is-key"' : ''}><td>${esc(keepNames[r.keep] || `Keep ${r.keep}`)}${mine ? ' (trained)' : ''}</td><td class="num">${pts(r.slot1)}</td><td class="num">${pts(r.slot2)}</td><td class="num">${pts(r.points)}</td><td class="num">${rate(r.passRate)}</td></tr>`;
-      })
-      .join('');
-
-    const CONTRACTS = [
-      ['mixed', 'Mixed convoy', 4, 'At least 3 inmates of 2 or more beasts'],
-      ['cohort', 'Work gang', 4, 'At least 4 inmates'],
-      ['veteran', 'Veteran-led crew', 4, 'A Rare or Legendary, plus 2 Normal or Magic'],
-      ['elite', 'Elite convoy', 8, '2 Rare or Legendary, 2 or more beasts'],
-      ['kin', 'Kin escort', 8, 'A Legendary, plus 1 of its beast below Legendary'],
-      ['muster', 'Elite muster', 8, '3 Rare or Legendary'],
-      ['heavy', 'Heavy convoy', 12, 'A Supreme or Rainbow; vault Rainbows count'],
-      ['bounty', 'Heavy bounty', 12, 'A Supreme or Rainbow; +8 points for each of the bounty beast'],
-    ];
-    document.getElementById('c-contracts').innerHTML = CONTRACTS.filter(([id]) => P.variants[id])
-      .map(([id, name, day, needs]) => `<tr><td>${name}</td><td>Day ${day}</td><td>${needs}</td><td class="num">${rate(P.variants[id].delivered)}</td><td class="num">${pts(P.variants[id].points)}</td></tr>`)
-      .join('');
-    const START_NAMES = { supply: 'Supply start', lean: 'Lean start', rats: 'Rat-breeding start' };
-    document.getElementById('c-starts').innerHTML = Object.entries(P.loadouts)
-      .map(([id, s]) => `<tr><td>${START_NAMES[id] || id}</td><td class="num">${rate(s.passRate)}</td><td class="num">${rate(s.fullRate)}</td><td class="num">${pts(s.points)}</td></tr>`)
-      .join('');
   })();
 </script>
 </body>

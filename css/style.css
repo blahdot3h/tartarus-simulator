@@ -2,8 +2,8 @@
    Layout: a night-shift cell block. Sixteen cells ring a stone courtyard,
    numbered clockwise from the warden's office at 01, with the warden's
    decisions in the middle. The log runs
-   down the left rail and the ledger (objective, contracts, vault, tools, food
-   chain) down the right. One deliberate dark look: rarity colors carry
+   down the left rail and the ledger (objective, vault, tools, food chain)
+   down the right. One deliberate dark look: rarity colors carry
    meaning, so the stone, iron and bone around them stay quiet. */
 :root {
   color-scheme: dark;
@@ -1551,7 +1551,6 @@ a.menu-item {
 .log-entry.k-ivory,
 .log-entry.k-tool,
 .log-entry.k-event { --k: var(--bone); }
-.log-entry.k-contract { --k: var(--moss); }
 .log-entry.k-swap { --k: var(--check); }
 .log-entry.k-patrol { --k: var(--chalk); }
 
@@ -1750,105 +1749,11 @@ a.menu-item {
   color: var(--ash);
 }
 
-.tip .btn,
-.contract .btn {
+.tip .btn {
   justify-self: start;
   min-height: 30px;
   padding: 4px 10px;
   font-size: 13px;
-}
-
-.contracts {
-  display: grid;
-  gap: 10px;
-}
-
-.voucher-line {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 4px 14px;
-  margin-bottom: 4px;
-}
-
-.voucher-line b {
-  font: 800 30px/1 var(--font-display);
-  font-variant-numeric: tabular-nums;
-  color: var(--bone);
-}
-
-.contract {
-  display: grid;
-  gap: 6px;
-  padding: 10px 12px;
-  border: 1px solid var(--iron);
-  border-radius: var(--radius);
-  background: var(--slab-hi);
-}
-
-.contract.is-active,
-.contract-active {
-  border-color: var(--bone);
-}
-
-.contract.is-missed {
-  opacity: 0.6;
-}
-
-.contract-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.contract-name {
-  font: 800 17px/1.1 var(--font-display);
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-}
-
-.contract-lines {
-  margin: 0;
-  padding-left: 18px;
-  font-size: 13.5px;
-}
-
-.contract-meta {
-  margin: 0;
-  font: 500 11px/1.4 var(--font-mono);
-  letter-spacing: 0.04em;
-  color: var(--ash);
-}
-
-.contract-heavy {
-  color: var(--bone);
-}
-
-.status {
-  padding: 4px 6px;
-  border: 1px solid var(--iron-hi);
-  border-radius: 2px;
-  color: var(--ash);
-  font: 600 10.5px/1 var(--font-mono);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.status.is-active {
-  border-color: var(--bone);
-  color: var(--bone);
-}
-
-.status.is-done {
-  border-color: var(--moss);
-  color: var(--moss);
-}
-
-.status.is-failed {
-  border-color: var(--blood);
-  color: var(--blood);
 }
 
 .tips {
@@ -2058,127 +1963,6 @@ a.menu-item {
 
 .trainer-body p {
   margin: 0;
-}
-
-/* Trainer in the delivery window: its convoy, then every convoy compared. */
-.deliver-trainer {
-  margin-bottom: 16px;
-}
-
-.dopts {
-  display: grid;
-  gap: 6px;
-  margin: 6px 0 2px;
-  padding: 0;
-  list-style: none;
-}
-
-.dopts:empty {
-  display: none;
-}
-
-.dopt {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 2px 10px;
-  padding: 6px 10px;
-  border: 1px solid var(--iron);
-  border-radius: var(--radius);
-  background: var(--slab);
-}
-
-.dopt.is-best {
-  border-color: var(--teal);
-}
-
-.dopt-name {
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--chalk);
-}
-
-.dopt.is-best .dopt-name {
-  color: var(--teal);
-}
-
-.dopt-value {
-  font: 600 13px/1.2 var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  color: var(--chalk);
-  white-space: nowrap;
-}
-
-.dopt-sub {
-  grid-column: 1 / 3;
-  font-size: 12px;
-  color: var(--ash);
-}
-
-.dopt-sub:empty {
-  display: none;
-}
-
-.dopt .btn {
-  grid-column: 3;
-  grid-row: 1 / span 2;
-  min-height: 30px;
-  padding: 4px 10px;
-  font-size: 13px;
-}
-
-/* Narrow screens: the numbers go under the name, the button to the side. */
-@media (max-width: 520px) {
-  .dopt {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .dopt-name {
-    grid-row: 1;
-  }
-
-  .dopt-value {
-    grid-column: 1;
-    grid-row: 2;
-  }
-
-  .dopt-sub {
-    grid-column: 1;
-    grid-row: 3;
-  }
-
-  .dopt .btn {
-    grid-column: 2;
-    grid-row: 1 / span 3;
-  }
-}
-
-/* The trainer's convoy in the list of inmates to send. */
-.pick.is-hint {
-  border-color: var(--teal);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--teal) 35%, transparent);
-}
-
-.pick.is-hint b::before {
-  content: "★ ";
-  color: var(--teal);
-}
-
-.deliver-trainer-off {
-  margin: 0 0 14px;
-  font-size: 13.5px;
-  color: var(--ash);
-}
-
-.link-btn {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--teal);
-  font: inherit;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
 }
 
 .tip {
@@ -2410,50 +2194,6 @@ textarea {
 .seed-row > :first-child {
   flex: 1 1 auto;
   min-width: 0;
-}
-
-.segmented {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.segmented label {
-  position: relative;
-  flex: 1 1 180px;
-}
-
-.segmented input {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  margin: 0;
-}
-
-.segmented span {
-  display: block;
-  padding: 10px 12px;
-  border: 1px solid var(--iron);
-  border-radius: var(--radius);
-  font-weight: 600;
-  text-align: center;
-  cursor: pointer;
-}
-
-.segmented input:checked + span {
-  border-color: var(--bone);
-  background: color-mix(in srgb, var(--bone) 8%, transparent);
-  color: var(--bone);
-}
-
-.segmented input:disabled + span {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.segmented input:focus-visible + span {
-  outline: 2px solid var(--bone);
-  outline-offset: 2px;
 }
 
 .options {
@@ -2812,57 +2552,7 @@ textarea {
   width: 64px;
 }
 
-/* Delivery and choices */
-
-.pick-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 6px;
-}
-
-.pick {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border: 1px solid var(--iron);
-  border-radius: var(--radius);
-  font-size: 14px;
-  cursor: pointer;
-}
-
-.pick:has(input:checked) {
-  border-color: var(--bone);
-}
-
-.pick b {
-  font-weight: 600;
-  color: var(--tc);
-}
-
-.pick small {
-  margin-left: auto;
-  font: 500 11px/1 var(--font-mono);
-  color: var(--ash);
-  white-space: nowrap;
-}
-
-.deliver-status {
-  margin: 0;
-  font-size: 14px;
-}
-
-.deliver-status.is-ok {
-  color: var(--moss);
-}
-
-.deliver-status.is-bad {
-  color: var(--blood);
-}
-
-#deliver-contract {
-  margin-bottom: 16px;
-}
+/* Choices */
 
 .refit {
   display: grid;
@@ -2899,31 +2589,6 @@ textarea {
 }
 
 /* Results */
-
-.verdict {
-  margin-bottom: 14px;
-  padding: 12px 14px;
-  border: 1px solid var(--moss);
-  border-radius: var(--radius);
-  color: var(--moss);
-  font: 800 22px/1.1 var(--font-display);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.verdict.is-fail {
-  border-color: var(--blood);
-  color: var(--blood);
-}
-
-.verdict small {
-  display: block;
-  margin-top: 4px;
-  font: 400 14px/1.4 var(--font-body);
-  letter-spacing: 0;
-  text-transform: none;
-  color: var(--chalk);
-}
 
 .roster-tiers {
   display: grid;
@@ -2971,44 +2636,6 @@ textarea {
 .roster li b {
   font-weight: 600;
   color: var(--tc);
-}
-
-.score-table {
-  width: 100%;
-  margin-top: 14px;
-  border-collapse: collapse;
-  font-variant-numeric: tabular-nums;
-}
-
-.score-table th,
-.score-table td {
-  padding: 6px 8px 6px 0;
-  border-bottom: 1px solid var(--iron);
-  text-align: left;
-  font-weight: 400;
-}
-
-.score-table th {
-  font: 500 10.5px/1.3 var(--font-mono);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--ash);
-}
-
-.score-table td:last-child,
-.score-table th:last-child {
-  text-align: right;
-  padding-right: 0;
-}
-
-.score-table tr.total td {
-  border-bottom: 0;
-  font: 800 22px/1.2 var(--font-display);
-  color: var(--bone);
-}
-
-.table-scroll {
-  overflow-x: auto;
 }
 
 /* ---------- Responsive ---------- */
@@ -3549,33 +3176,6 @@ textarea {
   gap: 8px;
 }
 
-.az-vouchers {
-  display: block;
-  max-width: 160px;
-}
-
-.az-contract {
-  display: grid;
-  gap: 8px;
-  padding: 12px 0 4px;
-  border-top: 1px solid var(--iron);
-}
-
-.az-contract .field {
-  display: block;
-  margin: 0;
-}
-
-.az-needs {
-  margin: 0;
-  font-size: 13px;
-  color: var(--ash);
-}
-
-.az-points {
-  max-width: 180px;
-}
-
 .az-ask {
   display: grid;
   gap: 4px;
@@ -3603,11 +3203,6 @@ textarea {
 .az-results.is-stale {
   border-color: var(--iron);
   background: var(--slab);
-}
-
-.az-results.is-stale .az-res-move,
-.az-results.is-stale .solver-list {
-  opacity: 0.5;
 }
 
 .az-res-move {

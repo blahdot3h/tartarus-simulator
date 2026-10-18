@@ -293,13 +293,16 @@
   let lastGift = 0; // a Warden's Treasure gift confirmed
   // Warden's Treasure picks, for the analyzer to count what's waiting (3 a
   // Treasure with Opulence): each Rainbow reaching the vault, and each gift
-  // confirmed. A Rainbow plays its sound and lights a vault cell, a moment
-  // apart; either counts it, once. A double-click on Confirm counts once: a
-  // pick is its popup opening, then Confirm.
+  // confirmed. A Rainbow logs its sound twice and lights one vault cell, all
+  // within a moment (every burst in the user's logs: 2 sounds a cell), so a
+  // burst of Rainbows is its cells, or half its sounds if no cell logged.
+  // Counting each sound made every Rainbow two, and a pick still waiting
+  // after the gift was taken brought the gift advice back (reports 349, 363,
+  // 373). A double-click on Confirm counts once: a pick is its popup
+  // opening, then Confirm.
   const gifts = { rainbows: 0, taken: 0 };
   let giftOpen = false;
-  const fly = { n: 0, at: 0 }; // Rainbow sounds not yet matched by a vault cell
-  const lit = new Map(); // vault cell -> when it lit
+  const burst = { last: 0, base: 0, sounds: 0, cells: new Set() };
 
   // The Treasure's popup closing with no gift confirmed just before: the
   // player pressed View Prison Status, and the Treasure still waits.
@@ -317,7 +320,7 @@
   function tell() {
     if (!channel) return;
     const st = C.state;
-    channel.postMessage({ type: 'status', from: me, log: st.log, file: st.file, window: st.window, last: lastPicture, triggers: triggerCount, detail: st.detail, hits: st.hits });
+    channel.postMessage({ type: 'status', from: me, log: st.log, file: st.file, window: st.window, last: lastPicture, triggers: triggerCount, detail: st.detail, hits: st.hits, lang: st.lang });
   }
   const NO_EVENTS = 'No game events in the log yet. In the game, press Esc and click Enable Log (under Account Related), then log out and back in.';
   const seen = []; // newest first: { at, line, kind }
@@ -519,16 +522,13 @@
     }
     if (/S16BoardColoredPop Run\b/.test(s.line)) giftOpen = true;
     const vault = /Anim_Archive_LightUp, Id = (\S+)/.exec(s.line);
-    const t = vault || /UI_S16_Premium_Quality_Fly/.test(s.line) ? stampMs(s.at) : 0;
-    if (t && t - fly.at > 1000) fly.n = 0;
-    if (vault && !(lit.has(vault[1]) && t - lit.get(vault[1]) < 2000)) {
-      lit.set(vault[1], t);
-      if (fly.n > 0) fly.n -= 1;
-      else gifts.rainbows += 1;
-    } else if (!vault && t) {
-      gifts.rainbows += 1;
-      fly.n += 1;
-      fly.at = t;
+    if (vault || /UI_S16_Premium_Quality_Fly/.test(s.line)) {
+      const t = stampMs(s.at);
+      if (!t || t - burst.last > 3000) Object.assign(burst, { base: gifts.rainbows, sounds: 0, cells: new Set() });
+      burst.last = t;
+      if (vault) burst.cells.add(vault[1]);
+      else burst.sounds += 1;
+      gifts.rainbows = burst.base + Math.max(burst.cells.size, Math.ceil(burst.sounds / 2));
     }
     seen.unshift(s);
     seen.length = Math.min(seen.length, 200);

@@ -180,8 +180,9 @@
 
   // Matches the board's fixed frame (walls, office, courtyard, cell numbers)
   // at every scale and position, coarse to fine. Returns { s, tx, ty, score }:
-  // an image point is s * (reference point) + (tx, ty).
-  function locateBoard(img, gray, ref) {
+  // an image point is s * (reference point) + (tx, ty). opts: { sharp, hint }
+  // (both below), from scan.
+  function locateBoard(img, gray, ref, opts) {
     const W = img.width;
     const H = img.height;
     const pts = ref.board.points;
@@ -209,12 +210,8 @@
     }
     const bw = maxX - minX;
     const bh = maxY - minY;
-    const levels = [{ g: blur(gray, W, H, 1), w: W, h: H, f: 1 }];
-    while (levels[levels.length - 1].w > 120 && levels[levels.length - 1].h > 60) {
-      const l = levels[levels.length - 1];
-      const d = half(l.g, l.w, l.h);
-      levels.push({ g: d.g, w: d.w, h: d.h, f: l.f * 2 });
-    }
+    // sharp: the picture's gray blurred by 1, when the caller has it.
+    const levels = [{ g: (opts && opts.sharp) || blur(gray, W, H, 1), w: W, h: H, f: 1 }];
     const score = (lv, s, ox, oy, nearest) => {
       let sx = 0;
       let sxx = 0;
@@ -236,6 +233,42 @@
       const varx = sxx - (sx * sx) / n;
       return varx > 1e-6 ? sxt / Math.sqrt(varx) : -1;
     };
+    // Fine steps over scale and position together, about a candidate.
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    const grid = (c, lv, ds, steps, dt, reach) => {
+      let best = c;
+      for (let i = -steps; i <= steps; i++) {
+        const s = c.s * (1 + i * ds);
+        // Scale about the board's middle, so the board stays in place.
+        const bx = c.tx - (s - c.s) * cx;
+        const by = c.ty - (s - c.s) * cy;
+        for (let dy = -reach; dy <= reach; dy++) {
+          for (let dx = -reach; dx <= reach; dx++) {
+            const tx = bx + dx * dt;
+            const ty = by + dy * dt;
+            const sc = score(lv, s, tx / lv.f, ty / lv.f, lv.f > 1);
+            if (sc > best.score) best = { s, tx, ty, score: sc };
+          }
+        }
+      }
+      return best;
+    };
+    // hint: where the board was in the last picture of this size (Auto
+    // Screenshot Mode's frames of one window keep it in place). Checked at
+    // full size first, and taken after the last fine step when it still
+    // matches as a board does: that skips the search over every scale, most
+    // of a reading's time (d8's profile: 63%).
+    const hint = opts && opts.hint;
+    if (hint && hint.w === W && hint.h === H) {
+      const was = { s: hint.s, tx: hint.tx, ty: hint.ty, score: score(levels[0], hint.s, hint.tx, hint.ty, false) };
+      if (was.score >= 0.81 && was.score >= hint.score - 0.05) return Object.assign(grid(was, levels[0], 0.0025, 3, 0.5, 3), { hinted: true });
+    }
+    while (levels[levels.length - 1].w > 120 && levels[levels.length - 1].h > 60) {
+      const l = levels[levels.length - 1];
+      const d = half(l.g, l.w, l.h);
+      levels.push({ g: d.g, w: d.w, h: d.h, f: l.f * 2 });
+    }
     // Coarse: every scale the board could appear at, on a small level, with
     // a quarter of the points. The board spans most of a screenshot's width
     // when cropped to it, and about half in a full-screen one.
@@ -310,27 +343,7 @@
     if (!top.length) return null;
     top.sort((a, b) => b.score - a.score);
     // Fine: search around the best few, first on a middle level, then at
-    // full size, over scale and position together.
-    const cx = (minX + maxX) / 2;
-    const cy = (minY + maxY) / 2;
-    const grid = (c, lv, ds, steps, dt, reach) => {
-      let best = c;
-      for (let i = -steps; i <= steps; i++) {
-        const s = c.s * (1 + i * ds);
-        // Scale about the board's middle, so the board stays in place.
-        const bx = c.tx - (s - c.s) * cx;
-        const by = c.ty - (s - c.s) * cy;
-        for (let dy = -reach; dy <= reach; dy++) {
-          for (let dx = -reach; dx <= reach; dx++) {
-            const tx = bx + dx * dt;
-            const ty = by + dy * dt;
-            const sc = score(lv, s, tx / lv.f, ty / lv.f, lv.f > 1);
-            if (sc > best.score) best = { s, tx, ty, score: sc };
-          }
-        }
-      }
-      return best;
-    };
+    // full size.
     let best = null;
     for (const c of top.slice(0, 5)) {
       let L = 0;
@@ -346,12 +359,15 @@
 
   // ---------- Reading cells ----------
 
-  // A padlock: a compact beige blob on the cell's padlock spot.
-  function padlockAt(img, x, y, k) {
+  // A padlock: a compact beige blob on the cell's padlock spot. minL: how
+  // light it must be (a meal pick darkens the board).
+  function padlockAt(img, x, y, k, minL = 112) {
     const test = (px, py) => {
       const [r, g, b] = rgbAt(img, px, py);
       const l = (r + g + b) / 3;
-      return l > 112 && r >= g && g >= b - 4 && r - b >= 6 && r - b <= 64;
+      // Warmer pictures (a stream's capture, report 344) make it more orange:
+      // red over blue by 67-71 there, 35 on most boards.
+      return l > minL && r >= g && g >= b - 4 && r - b >= 6 && r - b <= 80;
     };
     const found = blobs(img, x - 13 * k, y - 11 * k, x + 13 * k, y + 11 * k, test);
     let best = null;
@@ -360,7 +376,9 @@
       const w = b.w / k;
       const h = b.h / k;
       const off = Math.hypot(b.cx - x, b.cy - y) / k;
-      if (area < 35 || area > 150 || w < 7 || w > 18 || h < 5 || h > 15 || off > 7) continue;
+      // Area down to 22: in a warm picture only its brightest part passes
+      // (26-30 on report 344, against about 78 on most boards).
+      if (area < 22 || area > 150 || w < 7 || w > 18 || h < 5 || h > 15 || off > 7) continue;
       const fit = 1 - Math.abs(area - 78) / 78 - off / 14;
       if (!best || fit > best.fit) best = { fit, area, off };
     }
@@ -422,10 +440,15 @@
     const bins = [0, 0, 0, 0, 0];
     let samples = 0;
     let bright = 0;
+    const faint = [0, 0, 0]; // blue and purple, washed out
     const visit = (px, py) => {
       const [hh, ss, vv] = hsvAt(img, px, py);
       samples += 1;
       if (vv > 0.62 && ss < 0.25) bright += 1;
+      if (vv >= 0.3 && ss >= 0.15) {
+        if (hh >= 175 && hh < 242) faint[1] += 1;
+        else if (hh >= 242 && hh < 305) faint[2] += 1;
+      }
       if (vv < 0.45 || ss < 0.32) return;
       for (const [lo, hi, t] of TIER_BY_HUE) if (hh >= lo && hh < hi) bins[t] += 1;
     };
@@ -436,6 +459,15 @@
     }
     for (let py = y - 14 * k; py <= y - 4 * k; py += stepPx) for (let px = x - 9 * k; px <= x + 9 * k; px += stepPx) visit(px, py);
     const colored = bins.reduce((a, b) => a + b, 0);
+    // A warm picture (a stream's capture, report 344) washes a Magic
+    // frame's blue out: 2% of the frame passed as colored, against 12%
+    // faintly blue. A Normal's frame can be bluish metal in a cool picture
+    // (7-9%), but its glow over the portrait is white (0.07-0.19 of the box
+    // above it), where a washed-out color's has none (records of 2026-10-17).
+    const white = () => colorShare(img, x - 24 * k, y - 88 * k, x + 24 * k, y - 66 * k, (h, s, v) => v >= 0.35 && s < 0.15);
+    if (colored < 0.025 * samples && faint[1] + faint[2] > 0.06 * samples && white() < 0.03) {
+      return { tier: faint[2] > faint[1] ? 2 : 1, conf: 0.6, colored: colored / samples, bins, samples, faint: (faint[1] + faint[2]) / samples };
+    }
     // A Normal's frame has no colored pixels at all, at every scale tested;
     // the dimmest colored frame had 3%. A few stray ones leave it in doubt.
     if (colored < 0.025 * samples) return { tier: 0, conf: colored < 0.008 * samples ? 0.85 : bright > 0.04 * samples ? 0.8 : 0.55, colored: colored / samples };
@@ -462,6 +494,101 @@
   const isOrange = (h, s, v) => h >= 18 && h <= 46 && s > 0.6 && v > 0.55;
   const isGold = (h, s, v) => h >= 32 && h <= 56 && s > 0.38 && s < 0.9 && v > 0.5;
 
+  // A locked door whose inmate's rarity shows: a "?" portrait over the
+  // padlock (Crow Whispers, the Scales, the "below Rare" event), with red
+  // claw slashes at its foot when the Filthy Claws scratched it (report
+  // 243). Inside, the portrait is dark around a gray "?" (0.67-0.78 dark,
+  // 0.06-0.19 gray, at most 0.05 colorful on the saved ones); a plain lock
+  // shows no portrait, and an inmate, an animation or a tooltip there is
+  // colorful, bright or lighter (a lit wall behind a light streak: 0.53).
+  // A white streak's line or arrowhead across a plain lock is near white
+  // (the "?" never is: none on 26 doors) or leaves the inside darker
+  // (0.87-0.95). Its rarity is the frame's color.
+  function shownDoor(img, x, y, k) {
+    const lit = colorShare(img, x - 18 * k, y - 60 * k, x + 18 * k, y - 20 * k, (h, s, v) => v > 0.45);
+    if (lit < 0.015 || lit > 0.3) return null;
+    const inside = [x - 10 * k, y - 54 * k, x + 13 * k, y - 28 * k];
+    const dark = colorShare(img, ...inside, (h, s, v) => v < 0.25);
+    if (dark < 0.62 || dark > 0.85) return null;
+    if (colorShare(img, ...inside, (h, s, v) => s > 0.4 && v > 0.3) > 0.1) return null;
+    // The "?" stands in the middle: the middle third of the inside has 1.27
+    // to 9.6 times the gray of either side, while a stone wall or a light
+    // streak behind a plain lock spreads evenly (0.69-1.04).
+    const third = 23 / 3;
+    const isGray = (h, s, v) => s < 0.25 && v > 0.3 && v < 0.8;
+    const grays = [0, 1, 2].map((j) => colorShare(img, x + (-10 + j * third) * k, y - 54 * k, x + (-10 + (j + 1) * third) * k, y - 28 * k, isGray));
+    if (grays[1] < 0.04 || grays[1] < 1.15 * Math.max(grays[0], grays[2])) return null;
+    // A white glint can cross a real "?" too: then the "?"'s arc shows at
+    // the top of the middle (0.37-0.44 gray there), which a streak across a
+    // plain lock lacks (0.22 at most).
+    if (colorShare(img, ...inside, (h, s, v) => v > 0.82 && s < 0.25) > 0.002 && colorShare(img, x + (-10 + third) * k, y - 54 * k, x + (-10 + 2 * third) * k, y - (54 - 26 / 3) * k, isGray) < 0.3) return null;
+    // The slashes: 0.10-0.11 red there, 0.03 at most on other doors.
+    const scratch = colorShare(img, x - 20 * k, y - 30 * k, x + 10 * k, y - 5 * k, (h, s, v) => (h < 16 || h > 340) && s > 0.4 && v > 0.45) > 0.05;
+    const frame = frameRarity(img, x, y, k);
+    let tier = frame.tier;
+    // The slashes are red, as a Supreme's frame is: under them, the frame's
+    // other color (they alone make 1-2% of it red).
+    if (scratch && tier === 4) {
+      const b = frame.bins;
+      let t = 1;
+      for (let i = 2; i <= 3; i++) if (b[i] > b[t]) t = i;
+      tier = b[t] >= 0.025 * frame.samples ? t : b[4] > 0.06 * frame.samples ? 4 : 0;
+    }
+    return { tier, scratch, conf: frame.conf };
+  }
+
+  // The Hunt's prey mark: a gold crosshair over the foot of the portrait, a
+  // ring 7.5 units across its middle 15 units above the cell's anchor. On
+  // its diagonals the ring is lighter than just outside it (0.13-0.42
+  // brighter on three marked inmates), dimmed on a pick screen as well
+  // (report 352). The frame's lower tip, or a meal's red flames under it,
+  // can do that too, so its arms also cross it level: lighter than just
+  // above and below them (0.18-0.50 on the marks, below 0 on those).
+  function preyMark(img, x, y, k) {
+    const cy = y - 15.2 * k;
+    const v = (px, py) => Math.max(...rgbAt(img, Math.round(px), Math.round(py))) / 255;
+    let arm = 0;
+    let off = 0;
+    let n = 0;
+    for (const side of [-1, 1]) {
+      for (let d = 9; d <= 12; d += 0.5) {
+        arm += v(x + side * d * k, cy);
+        off += (v(x + side * d * k, cy - 3.5 * k) + v(x + side * d * k, cy + 3.5 * k)) / 2;
+        n += 1;
+      }
+    }
+    if ((arm - off) / n <= 0.1) return false;
+    const light = (rad) => {
+      let sum = 0;
+      let n = 0;
+      for (const a of [1, 3, 5, 7]) {
+        for (const dr of [-0.7, 0, 0.7]) {
+          const [r, g, b] = rgbAt(img, Math.round(x + Math.cos((a * Math.PI) / 4) * (rad + dr) * k), Math.round(cy + Math.sin((a * Math.PI) / 4) * (rad + dr) * k));
+          sum += Math.max(r, g, b) / 255;
+          n += 1;
+        }
+      }
+      return sum / n;
+    };
+    if (light(7.5) - light(11) <= 0.07) return false;
+    return colorShare(img, x - 13 * k, cy - 13 * k, x + 13 * k, cy + 12 * k, (h, s, v) => h >= 25 && h <= 60 && s > 0.3 && v > 0.3) > 0.04;
+  }
+
+  // A cell framed on a pick screen ("Select an Objective": the Sewer
+  // Ratway's frames every cell, the Hunt's only its targets): light gray
+  // corner brackets 47.5 units out and 72.5 and 5 units up. Framed corners
+  // had 0.03-0.21 light gray, unframed ones none (reports 352 and a Ratway
+  // pick); the pointer can cover one.
+  function framedCell(img, c) {
+    const k = c.k;
+    let lit = 0;
+    for (const [dx, dy] of [[-47.5, -72.5], [47.5, -72.5], [-47.5, -5], [47.5, -5]]) {
+      const share = colorShare(img, c.x + (dx - 8) * k, c.y + (dy - 8) * k, c.x + (dx + 8) * k, c.y + (dy + 8) * k, (h, s, v) => v > 0.6 && s < 0.15);
+      if (share >= 0.02) lit += 1;
+    }
+    return lit >= 3;
+  }
+
   function readCell(img, gray, loc, n, ref) {
     if (n === 0) {
       const [ox, oy] = at(loc, 0, 0);
@@ -476,6 +603,7 @@
     cell.nest = colorShare(img, x - 15 * k, y - 28 * k, x + 15 * k, y - 6 * k, (h, s, v) => h >= 18 && h <= 46 && s > 0.5 && v > 0.45) > 0.07;
     if (lock > 0.4) {
       Object.assign(cell, { kind: 'locked', conf: lock });
+      if (!cell.nest) cell.shown = shownDoor(img, x, y, k);
       return cell;
     }
     const face = faceMatch(gray, img.width, img.height, x, y, k, ref.faces);
@@ -500,6 +628,7 @@
         tier: frame.tier,
         conf: Math.max(0.05, Math.min(1, (face.score - 0.3) * 1.6, 0.4 + margin * 3, frame.conf)) * (cell.ghost ? 0.5 : 1),
       });
+      if (preyMark(img, x, y, k)) cell.prey = true;
       return cell;
     }
     Object.assign(cell, { kind: 'empty', conf: 0.4 });
@@ -574,18 +703,26 @@
       // Not inside a cell's room, where nests and frames are orange too.
       let nearest = -1;
       let dist = Infinity;
+      let dx = 0;
+      let dy = 0;
       for (const c of cells) {
         if (c.n === 0) continue;
         const d = Math.hypot(b.cx - c.x, b.cy - (c.y - 38 * c.k)) / c.k;
         if (d < dist) {
           dist = d;
           nearest = c.n;
+          dx = (b.cx - c.x) / c.k;
+          dy = (b.cy - (c.y - 38 * c.k)) / c.k;
         }
       }
       // A real "!" sits 45-55 from its cell, on every saved picture (590 marks
       // with their dot to show it). The mouse pointer's gold edge passes the
       // tests too, further off (reports 68, 133: events on cells that had none).
-      if (dist > 42 && dist < 58) out.add(nearest);
+      // And always at the cell's right, a little below its portrait's middle
+      // (811 of 818 marks: 45-55 right, 5-17 below); the other 7 were the
+      // pointer above or beside a cell and a Legendary frame's glow, and
+      // report 268's pointer sat above and left of cell 11.
+      if (dist > 42 && dist < 58 && dx > 38 && dx < 62 && dy > -2 && dy < 28) out.add(nearest);
     }
     return out;
   }
@@ -958,6 +1095,99 @@
     return out;
   }
 
+  // The card texts in any language (report 319, Chinese: "去13号", "go to
+  // No. 13"): the digits are the same glyphs whatever the words around
+  // them. A card is a piece of text in the row under the board holding a run
+  // of one or two glyphs that read surely as a cell's number (02-16); the
+  // cards are the biggest row of two or three of them. Used only when no
+  // "Go to Cell" card is found.
+  function doorCardsAny(img, loc, gray, ref) {
+    if (!gray || !ref || !ref.digits) return [];
+    const bottom = Math.max(at(loc, 0, 3)[1], at(loc, 5, 3)[1]) + 30 * loc.s;
+    const allowed = [];
+    for (let c = 2; c <= 16; c++) allowed.push(c);
+    const groups = [];
+    for (const r of textRadii(img)) {
+      const cards = [];
+      for (const line of textLines(img, 0, bottom, img.width - 1, Math.min(img.height - 1, bottom + 260 * loc.s), { minH: 6, maxH: Math.max(48, img.height * 0.07), r })) {
+        for (const p of line.pieces) {
+          if (p.glyphs.length < 2 || p.glyphs.length > 12) continue;
+          // A card's text has words around its number ("去3号" is three line
+          // heights long), where marks in the cards' art are short (report
+          // 368: three of them under "Пойти в №3" and "№6" outnumbered the
+          // two cards).
+          if (p.x1 - p.x0 < 2.5 * line.h) continue;
+          // Which word each glyph is in: a number stands as its own word
+          // ("камеру 13"), or between wide glyphs ("去13号", "2호로"), never
+          // inside a word of narrow letters (report 328: a Cyrillic "З" in
+          // "Заменить" read as a door 3).
+          const wordOf = new Map();
+          p.words.forEach((w, k) => w.glyphs.forEach((g) => wordOf.set(g, k)));
+          const apart = (run, g) => !g || wordOf.get(g) !== wordOf.get(run[0]) || g.w > 0.8 * g.h;
+          let found = null;
+          for (let i = 0; i < p.glyphs.length; i++) {
+            for (const len of [2, 1]) {
+              const run = p.glyphs.slice(i, i + len);
+              if (run.length !== len) continue;
+              if (!apart(run, p.glyphs[i - 1]) || !apart(run, p.glyphs[i + len])) continue;
+              const h = Math.max(...run.map((g) => g.h));
+              // Digits stand the line's full height and are narrower than
+              // tall; the words' glyphs around them aren't (report 319: "1"
+              // 5x15 and "3" 8x15 between 18x17 and 18x11).
+              if (run.some((g) => g.h < 0.8 * line.h || g.w > 0.8 * g.h)) continue;
+              const read = readNumber(gray, img.width, img.height, { glyphs: run }, h, ref.digits, allowed);
+              // Two digits that read surely are the number, not one of them
+              // alone ("13", not its "3").
+              if (read && read.score > 0.65 && (!found || len > found.run.length || (len === found.run.length && read.score > found.score))) found = { run, h, score: read.score };
+            }
+          }
+          if (found) cards.push({ p, h: found.h, mid: (p.y0 + p.y1) / 2, word: { glyphs: found.run }, fit: 1 - found.score });
+        }
+      }
+      for (const c of cards) {
+        const group = cards.filter((d) => Math.abs(d.mid - c.mid) < 2.5 * c.h && Math.abs(d.h - c.h) < 0.3 * c.h);
+        if (group.length < 2 || group.length > 3) continue;
+        // The cards say the same words around their numbers, so their texts
+        // are about as long ("去3号" and "去13号": a third longer at most);
+        // marks in the cards' art aren't (report 368: 32 to 68 px).
+        const widths = group.map((d) => d.p.x1 - d.p.x0);
+        if (Math.max(...widths) > 1.5 * Math.min(...widths)) continue;
+        group.fit = group.reduce((a, d) => a + d.fit, 0);
+        groups.push(group);
+      }
+    }
+    // The biggest, best-read row first. The others go along: marks in the
+    // cards' art can make a bigger row (report 368), which the board's lit
+    // cells then rule out (readDoors).
+    groups.sort((a, b) => b.length - a.length || a.fit - b.fit);
+    const seen = new Set();
+    const rows = groups.map((g) => g.slice().sort((a, b) => a.p.x0 - b.p.x0)).filter((g) => {
+      const key = g.map((c) => `${Math.round(c.p.x0 / 4)},${Math.round(c.mid / 4)}`).join(' ');
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    if (!rows.length) return [];
+    const best = rows[0];
+    best.others = rows.slice(1, 40);
+    return best;
+  }
+
+  // How light a cell's room is: a destination of the day is lit.
+  function cellLight(img, c) {
+    const k = c.k;
+    let n = 0;
+    let sum = 0;
+    for (let y = Math.round(c.y - 75 * k); y <= c.y - 15 * k; y += 2) {
+      for (let x = Math.round(c.x - 30 * k); x <= c.x + 30 * k; x += 2) {
+        const [r, g, b] = rgbAt(img, x, y);
+        n += 1;
+        sum += (r + g + b) / 3;
+      }
+    }
+    return n ? sum / n : 0;
+  }
+
   // "Go to Interrogation Room", the office's card (cell 01 is always the
   // Interrogation Room): about twice as wide as a numbered card's text, in
   // the same row, its words 2, 2, 13 and 4 letters long. Letters can run
@@ -1009,28 +1239,63 @@
     return [left, right];
   }
 
-  function readDoors(img, gray, loc, ref) {
-    const cards = doorCards(img, loc, gray, ref);
+  // foreign: the game isn't in English (the player's setting), so cards in
+  // another language are looked for by their numbers.
+  function readDoors(img, gray, loc, ref, foreign, cellReads) {
+    let cards = doorCards(img, loc, gray, ref);
+    let any = false;
+    // Another language's cards: their numbers only (report 319).
+    // On the English client, English words' letters can pass for digits
+    // there (a sweep found doors on decision rows), so not without the
+    // language.
+    if (!cards.length && foreign) {
+      cards = doorCardsAny(img, loc, gray, ref);
+      any = cards.length > 0;
+    }
     if (!cards.length) return null;
     // Doors are prison cells, 02-16.
     const allowed = [];
     for (let c = 2; c <= 16; c++) allowed.push(c);
-    const options = cards.map((c) => {
-      const glyphs = c.word.glyphs;
-      const whole = readNumber(gray, img.width, img.height, c.word, c.h, ref.digits, allowed, true);
-      // A blob wider than most single digits (about 0.65 of the letter
-      // height) may be two that touch, like "11" in small text, or one wide
-      // digit, like a "4" (report 59): read both ways, the better first.
-      if (glyphs.length === 1 && glyphs[0].w > 0.72 * c.h) {
-        const parts = splitGlyph(gray, img.width, glyphs[0]);
-        if (parts) return whole.concat(readNumber(gray, img.width, img.height, { glyphs: parts }, c.h, ref.digits, allowed, true)).sort((a, b) => b.score - a.score);
+    const readRow = (row) => {
+      const options = row.map((c) => {
+        const glyphs = c.word.glyphs;
+        const whole = readNumber(gray, img.width, img.height, c.word, c.h, ref.digits, allowed, true);
+        // A blob wider than most single digits (about 0.65 of the letter
+        // height) may be two that touch, like "11" in small text, or one wide
+        // digit, like a "4" (report 59): read both ways, the better first.
+        if (glyphs.length === 1 && glyphs[0].w > 0.72 * c.h) {
+          const parts = splitGlyph(gray, img.width, glyphs[0]);
+          if (parts) return whole.concat(readNumber(gray, img.width, img.height, { glyphs: parts }, c.h, ref.digits, allowed, true)).sort((a, b) => b.score - a.score);
+        }
+        return whole;
+      });
+      if (options.some((o) => !o.length)) return null;
+      const read = distinctNumbers(options);
+      return { row, options, read, cells: [...new Set(read.map((r) => r.value - 1))] };
+    };
+    // Cards read by their numbers alone are checked against the board: the
+    // game lights the locked cells you can go to (54-62 against 17-28 for
+    // the rest, on three boards), and a decision row's words read as
+    // numbers name unlit ones (reports 328, 329, 333). At least one door is
+    // a plain locked cell, and every such door is lit. The first row of
+    // cards that passes is the doors (report 368: marks in the cards' art
+    // named unlit cells, above the cards' own numbers).
+    let got = null;
+    if (any && cellReads) {
+      for (const row of [cards, ...(cards.others || [])]) {
+        const g = readRow(row);
+        if (!g) continue;
+        const plain = g.cells.filter((n) => cellReads[n] && cellReads[n].kind === 'locked' && !cellReads[n].shown);
+        if (plain.length && plain.every((n) => cellLight(img, cellReads[n]) >= 40)) {
+          got = g;
+          break;
+        }
       }
-      return whole;
-    });
-    if (options.some((o) => !o.length)) return null;
-    const read = distinctNumbers(options);
+    } else got = readRow(cards);
+    if (!got) return null;
+    if (got.row !== cards) cards = got.row;
+    const { options, read, cells } = got;
     const score = read.reduce((a, r) => a + r.score, 0) / read.length;
-    const cells = [...new Set(read.map((r) => r.value - 1))];
     const boxes = cards.map((c) => [c.p.x0, c.p.y0, c.p.x1, c.p.y1]);
     // The office (cell 01) as a destination.
     if (cards.office) {
@@ -1039,7 +1304,35 @@
     }
     // A card moved off its first reading, or two still alike, is worth a check.
     const moved = read.some((r, i) => r.value !== options[i][0].value);
-    return { cells, conf: Math.max(0.1, Math.min(1, (score - 0.3) * 1.6)) * (cells.length === read.length + (cards.office ? 1 : 0) ? 1 : 0.4) * (moved ? 0.55 : 1), boxes };
+    // The mouse pointer (gold) over a card's number hides its digit (report
+    // 318: a "4" read as 6, then 9): that door is the player's to check.
+    const hidden = [];
+    cards.forEach((c, i) => {
+      const g = c.word.glyphs;
+      const box = [Math.min(...g.map((q) => q.x0)) - c.h, Math.min(...g.map((q) => q.y0)) - c.h, Math.max(...g.map((q) => q.x1)) + 1.5 * c.h, Math.max(...g.map((q) => q.y1)) + c.h];
+      if (colorShare(img, ...box, isGold) > 0.03 && read[i]) hidden.push(read[i].value - 1);
+    });
+    // The day's doors are lit (see above): with one number hidden, the one
+    // lit plain locked cell that no other card names is that card's (report
+    // 360: "Go to Cell 7" under the pointer read as 4, with 3, 5 and 7 lit).
+    // Only plain locked cells compare: a portrait lights its room anyway.
+    let lit = false;
+    const guess = hidden.length === 1 ? hidden[0] : -1;
+    if (guess >= 0 && cellReads) {
+      const named = new Set(cells.filter((n) => n !== hidden[0]));
+      const found = [];
+      cellReads.forEach((c, n) => {
+        if (n > 0 && !named.has(n) && c && c.kind === 'locked' && !c.shown && !c.nest && cellLight(img, c) >= 40) found.push(n);
+      });
+      if (found.length === 1) {
+        cells[cells.indexOf(hidden[0])] = found[0];
+        hidden[0] = found[0];
+        lit = true;
+      }
+    }
+    // Settled by the lit cells, the hidden card's own reading doesn't count.
+    const shaky = lit ? read.some((r, i) => r.value - 1 !== guess && r.value !== options[i][0].value) : moved;
+    return { cells, conf: Math.max(0.1, Math.min(1, (score - 0.3) * 1.6)) * (cells.length === read.length + (cards.office ? 1 : 0) ? 1 : 0.4) * (shaky ? 0.55 : 1) * (hidden.length && !lit ? 0.4 : 1), boxes, hidden, lit };
   }
 
   // Doors lead to different cells, so two cards can't read the same number
@@ -1115,7 +1408,7 @@
   // Finds a label in a box by its letter count and its shape (width over
   // letter height): word breaks in this font are uneven, and colored labels
   // can come apart into extra pieces.
-  function findLabel(img, box, letters, shape) {
+  function findLabel(img, box, letters, shape, slack = 2.5) {
     const lines = [];
     for (const r of textRadii(img)) lines.push(...textLines(img, box[0], box[1], box[2], box[3], { minH: 6, maxH: Math.max(40, img.height * 0.06), r, s: 0.5 }));
     let best = null;
@@ -1123,7 +1416,7 @@
       for (const p of line.pieces) {
         const n = p.words.reduce((a, w) => a + w.glyphs.length, 0);
         const ratio = (p.x1 - p.x0) / Math.max(1, line.h);
-        if (Math.abs(n - letters) > 6 || Math.abs(ratio - shape) > 2.5) continue;
+        if (Math.abs(n - letters) > 6 || Math.abs(ratio - shape) > slack) continue;
         const off = Math.abs(n - letters) / 3 + Math.abs(ratio - shape);
         if (!best || off < best.off) best = { off, x0: p.x0, x1: p.x1, y0: p.y0, y1: p.y1, h: line.h, words: p.words.map((w) => w.glyphs.length) };
       }
@@ -1323,11 +1616,32 @@
 
   // Chromatic prisoners: filled slots under the "Chromatic Prisoner" label,
   // right of the board. Empty slots are dark outlines; a filled one glows.
+  // View Prison Status, the board behind an open Warden's Treasure: its
+  // "Return to Selection" button at the top right, words of 6, 2 and 9
+  // letters (and the eye icon after them), where the board otherwise shows
+  // "Chromatic Prisoner", 9 and 8 (report 325: a pasted status view taken
+  // for a plain board).
+  function readStatusView(img, loc) {
+    const right = Math.max(at(loc, 5, 0)[0], at(loc, 5, 3)[0]) + 60 * loc.s;
+    if (right > img.width - 30) return false;
+    for (const r of textRadii(img)) {
+      for (const line of textLines(img, right, 0, img.width - 1, Math.round(img.height / 2), { minH: 6, maxH: Math.max(40, img.height * 0.06), r, s: 0.5 })) {
+        for (const p of line.pieces) {
+          const w = p.words.map((q) => q.glyphs.length);
+          if (w.length >= 3 && Math.abs(w[0] - 6) + Math.abs(w[1] - 2) + Math.abs(w[2] - 9) <= 2) return true;
+        }
+      }
+    }
+    return false;
+  }
+
   function readChromatic(img, loc) {
     const right = Math.max(at(loc, 5, 0)[0], at(loc, 5, 3)[0]) + 60 * loc.s;
     if (right > img.width - 30) return null;
     // In the top half: lower down, other text can pass for it (report 178).
-    const label = findLabel(img, [right, 0, img.width - 1, Math.round(img.height / 2)], 17, 14.4);
+    // Its shape loosely: with "Ch" missed it is 11.6 lines long (report
+    // 352); its width in the board's scale is checked below.
+    const label = findLabel(img, [right, 0, img.width - 1, Math.round(img.height / 2)], 17, 14.4, 3.5);
     if (!label) return null;
     // Sizes in the board's scale (the label is 144 px wide at 1x). The
     // label's own width misleads: its first letter missed, or the "?"
@@ -1449,22 +1763,25 @@
     return [q(xs, 0.01), q(ys, 0.01), q(xs, 0.99), q(ys, 0.99)];
   }
 
-  // Whether the Re-roll button shows, left of Confirm: its label's light
-  // letters. Without a re-roll left, Confirm stands alone in the middle.
-  // The buttons keep to the screen's bottom whatever the cards' size u.
+  // Whether the Re-roll button shows, left of Confirm: its label, "Re-roll"
+  // (words of 2 and 4 marks, about 3.5 letter heights wide, on every saved
+  // offer with it; nothing there on those without). Only the pet gives the
+  // offer a re-roll (the user, 2026-10-18), so light pixels there alone
+  // (the pointer, a glint) aren't one (report 338). The buttons keep to the
+  // screen's bottom whatever the cards' size u.
   function pickRerollShown(img, u = img.height / 1080) {
     const s = u;
     const bottom = img.height - 1080 * s;
-    const x0 = Math.round(img.width / 2 - 330 * s);
-    const x1 = Math.round(img.width / 2 - 90 * s);
-    let light = 0;
-    for (let y = Math.round(bottom + 940 * s); y <= Math.min(img.height - 1, Math.round(bottom + 985 * s)); y++) {
-      for (let x = Math.max(0, x0); x <= x1; x++) {
-        const [, sat, v] = hsvAt(img, x, y);
-        if (v > 0.55 && sat < 0.25) light += 1;
+    for (const r of textRadii(img)) {
+      for (const line of textLines(img, img.width / 2 - 330 * s, bottom + 925 * s, img.width / 2 - 90 * s, Math.min(img.height - 1, bottom + 1000 * s), { minH: 5, maxH: 40, r })) {
+        for (const p of line.pieces) {
+          const n = p.glyphs.length;
+          const span = (p.x1 - p.x0) / line.h;
+          if (n >= 5 && n <= 8 && span > 2.6 && span < 4.6) return true;
+        }
       }
     }
-    return light > 60 * s * s;
+    return false;
   }
 
   // The three cards on offer, left to right, each matched by its art to the
@@ -1484,8 +1801,8 @@
     // box sits inside its window (at most 79 of its 85 units out from the
     // middle at the right size, in every saved pick) instead of cut by the
     // window's side or filling it with the card's frame. The full size when
-    // it fits (as before), else the fitting size, in 2% steps down to half,
-    // whose side cards' art is best centered; none fitting, the full size.
+    // it fits (as before), else the biggest fitting size, in 2% steps down
+    // to half; none fitting, the full size.
     const u0 = img.height / 1080;
     const boxesAt = (u) => [-1, 0, 1].map((k) => pickArtBox(img, k, u));
     const offCenter = (boxes, u) => {
@@ -1493,18 +1810,26 @@
       let sum = 0;
       for (let i = 0; i < 3; i++) {
         const dx = Math.abs((boxes[i][0] + boxes[i][2]) / 2 - (img.width / 2 + (i - 1) * 480 * u)) / u;
-        if (dx + (boxes[i][2] - boxes[i][0]) / 2 / u > 80) return Infinity;
+        const width = (boxes[i][2] - boxes[i][0]) / u;
+        // A card's art is 92-136 wide at the right size: a sliver caught in
+        // a window far too small isn't (report 278: 47 at 0.56 of the size).
+        if (width < 80 || dx + width / 2 > 80) return Infinity;
         if (i !== 1) sum += dx;
       }
       return sum;
     };
     let u = u0;
+    // The biggest size that fits, not the best centered: a far smaller
+    // window can fit around a part of the art (report 336: 0.64 fitted
+    // better than the right 0.98, reading the Dog Tag and the Collar as a
+    // Whip and a Casket).
     if (offCenter(boxesAt(u0), u0) === Infinity) {
-      let best = Infinity;
       for (let i = 1; i <= 25; i++) {
         const ui = u0 * (1 - 0.02 * i);
-        const off = offCenter(boxesAt(ui), ui);
-        if (off < best) [u, best] = [ui, off];
+        if (offCenter(boxesAt(ui), ui) < Infinity) {
+          u = ui;
+          break;
+        }
       }
     }
     const cards = [-1, 0, 1].map((k) => {
@@ -1604,6 +1929,7 @@
     // before its title shows (report 60).
     const ends = [];
     const lefts = [];
+    const bits = []; // short pieces of one contrast window, for split labels
     // The row's title, by its words' letter counts: "Make Your Decision"
     // [4, 4, 8], or the Sewer Ratway's "Select an Objective" [6, 2, 9]
     // (a stray mark can lead).
@@ -1632,8 +1958,35 @@
           }
           // Another card's label, for a row seen without its title.
           if (n >= 6 && n <= 13 && span > 3 && span < 8) lefts.push({ x1: p.x1, mid: line.mid });
+          if (n <= 5) bits.push({ n, x0: p.x0, x1: p.x1, mid: line.mid, h: line.h });
         }
       }
+      // A label can come apart over two lines, its tall letters on one and
+      // the short ones a little lower (report 349: "Replace" as R, l and
+      // ep, ace): two pieces one over the other make one word.
+      for (let i = 0; i < bits.length; i++) {
+        for (let j = i + 1; j < bits.length; j++) {
+          // The tall letters' line over the short ones': taller, a little
+          // higher, over the same stretch.
+          const [up, low] = bits[i].mid < bits[j].mid ? [bits[i], bits[j]] : [bits[j], bits[i]];
+          const h = up.h;
+          const below = low.mid - up.mid;
+          const overlap = Math.min(up.x1, low.x1) - Math.max(up.x0, low.x0);
+          // Letters, not the cards' studs (4-5 px pieces along their edges):
+          // a label's tall letters are about 13 board units high.
+          if (up.h < 10 * loc.s || up.h < 1.15 * low.h || below < 0.3 * h || below > h || overlap < 0.5 * Math.min(up.x1 - up.x0, low.x1 - low.x0)) continue;
+          // "Replace" starts tall (R) and ends short (ace): the short letters'
+          // piece starts after the tall one's and runs on past its end. Card
+          // names and icons over the row came apart other ways (310, 332).
+          if (low.x0 < up.x0 || low.x1 < up.x1 + h) continue;
+          const n = up.n + low.n;
+          const x0 = Math.min(up.x0, low.x0);
+          const x1 = Math.max(up.x1, low.x1);
+          const span = (x1 - x0) / h;
+          if (n >= 6 && n <= 8 && span > 3 && span < 6.5) labels.push({ x0, x1, mid: up.mid, h });
+        }
+      }
+      bits.length = 0;
     }
     // The Consume card: a red block, not the torches' orange. Read in
     // strips about a third of a card wide: the Consume card's best strip is
@@ -1641,6 +1994,7 @@
     // nothing else under the board passes 0.2%.
     const strip = Math.max(8, Math.round(100 * loc.s));
     let red = 0;
+    let redX = Infinity; // the middle of the reddest strip
     for (let sx = Math.round(x0); sx + strip <= x1; sx += strip) {
       let n = 0;
       let hit = 0;
@@ -1651,7 +2005,10 @@
           if ((h < 12 || h > 348) && s > 0.55 && v > 0.3) hit += 1;
         }
       }
-      if (n) red = Math.max(red, hit / n);
+      if (n && hit / n > red) {
+        red = hit / n;
+        redX = sx + strip / 2;
+      }
     }
     const consume = red > 0.01;
     // "Consume" has as many letters as "Replace": a label on the Consume
@@ -1682,7 +2039,9 @@
     // Without its title, a stray short word isn't a row of cards. A row
     // still counts with "End" as one word and another card's label to its
     // left on the same line, and a Consume card or a Replace label.
-    const row = ends.some((e) => lefts.some((l) => Math.abs(l.mid - e.mid) < e.h / 2 && l.x1 < e.x0 && e.x0 - l.x1 < 30 * e.h));
+    // The Consume card's own label is red on red, which isn't read as text:
+    // its red block left of "End" counts as that label (report 310).
+    const row = ends.some((e) => lefts.some((l) => Math.abs(l.mid - e.mid) < e.h / 2 && l.x1 < e.x0 && e.x0 - l.x1 < 30 * e.h) || (consume && redX < e.x0 && e.x0 - redX < 30 * e.h));
     if (!title && !(row && (consume || replace))) return null;
     if (office) return { office: true, replace: false, consume: false, end: false, title };
     return { replace, consume, end, title, red: Math.round(1000 * red) / 1000 };
@@ -1690,10 +2049,17 @@
 
   // ---------- Everything ----------
 
-  function scan(img, ref) {
+  // opts.cache: an object kept between pictures (the analyzer's reader
+  // worker): the board found in the last one is looked for first in the
+  // next of the same size. opts.lang: the game's language ('en', 'zh', ...),
+  // as the player set it: not English, door cards are read by their numbers.
+  function scan(img, ref, opts) {
     const t0 = Date.now();
     const gray = grayOf(img);
-    let loc = locateBoard(img, gray, ref);
+    const sharp = blur(gray, img.width, img.height, 1);
+    const cache = opts && opts.cache;
+    let loc = locateBoard(img, gray, ref, { sharp, hint: cache && cache.loc });
+    if (cache && loc && loc.score >= 0.81) cache.loc = { w: img.width, h: img.height, s: loc.s, tx: loc.tx, ty: loc.ty, score: loc.score };
     // Real boards match their frame at 0.81 or more at every size tested;
     // instrument picks, popups and other screens stay near 0.5 or under. A
     // darkened board (a devour's meal pick) also matches weakly, but its
@@ -1704,20 +2070,31 @@
     }
     const notes = [];
     if (!loc || (!loc.byLabels && loc.score < 0.65)) return { ok: false, reason: 'No Tartarus prison board found in this picture.', loc, ms: Date.now() - t0 };
-    const sharp = blur(gray, img.width, img.height, 1);
     const cells = [];
     for (let n = 0; n < 16; n++) cells.push(readCell(img, sharp, loc, n, ref));
     const warden = findWarden(img, loc);
     // An open cell can hold an event beside its inmate (the cell popup's
     // "Can trigger Prison Incident"): 8 saved screenshots show one.
     for (const n of findEvents(img, loc, cells, warden)) if (cells[n].kind === 'locked' || cells[n].kind === 'inmate') cells[n].event = true;
-    const doors = readDoors(img, sharp, loc, ref);
+    const doors = readDoors(img, sharp, loc, ref, !!(opts && opts.lang && opts.lang !== 'en'), cells);
     const days = readDays(img, sharp, loc, ref);
     const tools = readTools(img, loc, ref);
     const badge = readBadge(img, tools.label, ref);
     const chromatic = readChromatic(img, loc);
+    const statusView = !doors && readStatusView(img, loc);
     const objective = objectiveBox(img, loc, tools);
     const chain = readChainScreen(img, loc, cells, warden);
+    // A meal pick darkens the board, most at its red sides, where a padlock
+    // can drop below the usual lightness (report 314: three locked cells
+    // read as open and empty): a cell read empty there is checked again for
+    // a dimmer one.
+    if (chain) {
+      for (const c of cells) {
+        if (c.kind !== 'empty') continue;
+        const lock = padlockAt(img, c.x, c.y, c.k, 70);
+        if (lock > 0.4) Object.assign(c, { kind: 'locked', conf: lock * 0.8, lock });
+      }
+    }
     // On a meal pick, each meal's fangs are red, as a Supreme's frame is:
     // a blue or purple frame shows through them (report 206: two purple
     // frames read as Supreme, the fangs about half their color). The fangs'
@@ -1735,8 +2112,10 @@
     // read as (report 67: "Instigate" came apart, and "Bestow" passed for
     // Replace).
     if (decision && !decision.ratway && !decision.office && warden && warden.cell === 0) Object.assign(decision, { office: true, replace: false, consume: false, end: false });
+    // "Select an Objective": the cells it frames, to pick from.
+    if (decision && decision.ratway) decision.framed = cells.filter((c) => c.n > 0 && framedCell(img, c)).map((c) => c.n);
     if (!warden) notes.push('The warden’s arrow was not found.');
-    return { ok: true, loc, cells, warden, doors, days, tools, badge, chromatic, objective, chain, decision, notes, ms: Date.now() - t0 };
+    return { ok: true, loc, cells, warden, doors, days, tools, badge, chromatic, objective, chain, decision, statusView, notes, ms: Date.now() - t0 };
   }
 
   const api = { scan, scanPick, pickArtBox, pickRerollShown, locateBoard, readCell, findWarden, findToolIcons, readDoors, readDays, doorCards, dayNumber, prefixVector, textLines, glyphVector, faceVector, artFeature, similarity, hsv, blobs, at, gridOf, scaleAt, grayOf, blur, RING, H0, ARROW, FACE, GLYPH, locateByLabels, readChainScreen, readDecision, readObjectiveTitle, withPanelIcons, badgeBox, readBadge };

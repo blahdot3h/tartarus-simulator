@@ -347,6 +347,8 @@
     crow: mark('<path d="M14 44V24a10 10 0 0 1 20 0v20Z" fill="#2a2f37" stroke="#8d92a8" stroke-width="2"/><path d="M20.5 27a3.5 3.5 0 1 1 5.5 2.9c-1.4 1-2 1.8-2 3.6M24 37.5v.5" stroke="#5fc4b8" stroke-width="2.2" fill="none" stroke-linecap="round"/><path d="M8 12c4-6 12-7 16-3l8-1-6 4c-3 4-9 5-14 3Z" fill="#1d1b20" stroke="#6f7488" stroke-width="1"/><circle cx="20" cy="10.5" r="1.2" fill="#e0675f"/>'),
     // Taste of Freedom: a key over three open doors.
     freedom: mark('<path d="M4 44V26a6 6 0 0 1 12 0v18ZM18 44V22a6 6 0 0 1 12 0v22ZM32 44V26a6 6 0 0 1 12 0v18Z" fill="#2a2f37" stroke="#c9a35a" stroke-width="1.8"/><circle cx="18" cy="9" r="4.5" fill="none" stroke="#e8c46a" stroke-width="2.2"/><path d="M22.5 9h17M33 9v4M37 9v3" stroke="#e8c46a" stroke-width="2.2" stroke-linecap="round"/>'),
+    // Extra Portion: a bowl with three servings rising.
+    portion: mark('<path d="M6 26h36c0 10-8 17-18 17S6 36 6 26Z" fill="#7a5130" stroke="#c9a35a" stroke-width="1.8"/><path d="M11 22l4-6 4 6M20 15l4-6 4 6M29 22l4-6 4 6" fill="none" stroke="#e8c46a" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>'),
     // Usurpation: a name gouged into the wall, with one or two claw marks.
     usurp1: mark('<rect x="6" y="8" width="36" height="32" rx="3" fill="#2a2f37" stroke="#9aa0ad" stroke-width="1.4"/><path d="M14 14l4 20M20 13l4 20M26 14l4 20" stroke="#e0675f" stroke-width="2.2" stroke-linecap="round"/><path d="M35 15v18" stroke="#f5ecd8" stroke-width="3" stroke-linecap="round"/>'),
     usurp2: mark('<rect x="6" y="8" width="36" height="32" rx="3" fill="#2a2f37" stroke="#9aa0ad" stroke-width="1.4"/><path d="M11 14l4 20M17 13l4 20M23 14l4 20" stroke="#e0675f" stroke-width="2.2" stroke-linecap="round"/><path d="M32 15v18M38 15v18" stroke="#f5ecd8" stroke-width="3" stroke-linecap="round"/>'),
@@ -431,6 +433,10 @@
         const where = other ? L(other.n) : '--';
         badges.push(`<span class="badge badge-prey">${hunter ? 'Hunt' : 'Prey'} ${where}·${link.rounds}</span>`);
         label += hunter ? `, hunting cell ${where}` : `, prey of cell ${where}`;
+      } else if (inmate.marked) {
+        // A Prey mark read from a picture, its Lion not known.
+        badges.push('<span class="badge badge-prey">Prey</span>');
+        label += ', wears a Prey mark';
       }
     } else {
       body = '<span class="floor">Empty</span>';

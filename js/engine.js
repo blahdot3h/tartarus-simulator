@@ -22,8 +22,6 @@
   // 10, then only allows things to go up to red max").
   const VAULT_SLOTS = 10;
   const LOG_LIMIT = 400;
-  const CHALLENGE_DAYS = 12;
-  const START_VOUCHERS = 6;
 
   const TIERS = ['Normal', 'Magic', 'Rare', 'Legendary', 'Supreme', 'Rainbow'];
 
@@ -35,30 +33,25 @@
     rat: { name: 'Rat' },
   };
 
-  // Who eats whom: each beast has one meal, in a loop. From Legendary up
-  // (params.doubleEatTier), Mammoths also eat Wolves and Lions also eat
-  // Rats, the Chinese sim's second meals: seen live three times on
-  // 2026-10-16, each with a Legendary eater offered both kinds, while lower
-  // eaters have shown only the one meal. Without a tier (executions), the
-  // one meal.
+  // Who eats whom: each beast has one meal, in a loop, and Mammoths also eat
+  // Wolves and Lions also eat Rats, at the eater's rarity. These second
+  // meals were first seen live on Legendary eaters (2026-10-16), and kept
+  // to Legendary and up; players' games then offered them at every rarity,
+  // as first meals and mid-chain (reports 206, 208, 306, 322, 323, and the
+  // jaws markers on 120 of 123 such boards), so since 2026-10-17 they're
+  // at every rarity (the user: "fix it"). params.doubleEatTier still sets
+  // where they start, for the Lab. Without a tier (executions), the one
+  // meal.
   const FOOD_CHAIN = { mammoth: ['lion'], lion: ['wolf'], wolf: ['rat'], rat: ['mammoth'] };
   const SECOND_MEAL = { mammoth: ['wolf'], lion: ['rat'] };
-  // Cage Fight, the run's objective: an inmate can consume the beasts it
-  // counters (both meals, at any rarity: the user saw a Rare Mammoth eat
-  // Wolves) at its own rarity or lower, and consuming never re-rolls its
-  // beast.
+  // Cage Fight, a start-of-run card: an inmate can consume the beasts it
+  // counters (both meals) at its own rarity or lower, and consuming never
+  // re-rolls its beast.
   const cageFight = (state) => !!state && state.startEvent === 'cagefight';
   const eatsOf = (state, beast, tier) => {
     const first = FOOD_CHAIN[beast] || [];
     const from = cageFight(state) ? 0 : state && state.params && Number.isFinite(state.params.doubleEatTier) ? state.params.doubleEatTier : DEFAULT_PARAMS.doubleEatTier;
     return Number.isFinite(tier) && tier >= from && SECOND_MEAL[beast] ? first.concat(SECOND_MEAL[beast]) : first;
-  };
-
-  // Convoy pressure each inmate adds to an escort, by tier.
-  const PRESSURE = [2, 4, 8, 16, 32, 65];
-  const ESCORTS = {
-    light: { name: 'Light escort', cap: 36, cost: 1 },
-    heavy: { name: 'Heavy escort', cap: 72, cost: 3 },
   };
 
   // Relative worth of one inmate per tier; the advisor ranks moves with it.
@@ -84,7 +77,9 @@
     tierWeights: [40, 38, 12, 8, 2],
     swapWeights: [52, 32, 9, 6, 1.5],
     beastWeights: [25, 25, 25, 25],
-    doubleEatTier: 3,
+    // Second meals (Mammoths eat Wolves, Lions eat Rats) from this rarity
+    // up: every rarity, as players' games show (it was 3, Legendary).
+    doubleEatTier: 0,
     // Special events turn up on random locked doors, seen at once (players'
     // boards, 2026-10-17): one at the start of 72% of runs, then a chance
     // each morning, after the patrol's walk and after each other move.
@@ -103,9 +98,6 @@
     rewards: true,
     startTools: 1,
   };
-
-  // The contract challenge always plays with these values.
-  const CHALLENGE_PARAMS = Object.assign({}, DEFAULT_PARAMS, { executionSameTier: true, executionRerolls: true, rewards: true, startTools: 0 });
 
   // Field definitions for the Lab form; normalizeParams clamps to these.
   const PARAM_FIELDS = [
@@ -141,7 +133,7 @@
   // pick by its printed name.
   const TOOLS = {
     revenge: { name: "Avenger's Casket", text: 'After a consume, 30% chance to open a sealed cell holding a meal for the eater at its new rarity. That door triggers nothing else.' },
-    muzzle: { name: "Raging Beast's Agonizing Muzzle", text: 'When 4 or fewer inmates are on the block after the meal, a consume gains +2 extra tiers.' },
+    muzzle: { name: "Raging Beast's Agonizing Muzzle", text: 'When 4 or fewer inmates are on the block before a consume (its meal included), the consume gains +2 extra tiers.' },
     saw: { name: 'Rusty Saw', text: 'After a consume, 25% chance of +1 extra tier.' },
     keys: { name: 'Lost Ring of Keys', text: 'When a patrol opens a door, 80% chance to also open the cells on both sides. Those doors trigger nothing else.' },
     rope: { name: "Hangman's Noose", text: 'Replacement inmates are never Normal or Magic.' },
@@ -258,10 +250,13 @@
     // shows its rarity (a "?" portrait), as with Crow Whispers, so the
     // locked doors left dark hold Rare or better.
     hunt: { name: '"Treasure" Hunt' },
+    // A player's report (#313, 2026-10-17): "randomly select up to 3 inmates
+    // and increase their rarity by 1 tier".
+    portion: { name: 'Extra Portion' },
   };
   // The pool new events are drawn from (the game's "Prison Incidents"). It
   // changes during a run: Usurpation I trades itself for Usurpation II.
-  const EVENT_POOL = ['chain', 'execution', 'trickster', 'appetite', 'convict', 'crow', 'freedom', 'usurp1', 'ratway', 'hunt'];
+  const EVENT_POOL = ['chain', 'execution', 'trickster', 'appetite', 'convict', 'crow', 'freedom', 'usurp1', 'ratway', 'hunt', 'portion'];
   // The Usurpation chain (the user's cards, 2026-10-16): how many inmates
   // rise and by how much, and which Usurpation then takes its place in the
   // Prison Incidents ("Add [Usurpation IV] to Prison Incidents and remove
@@ -275,6 +270,8 @@
   };
   // Taste of Freedom opens this many random locked cells.
   const FREEDOM_CELLS = 3;
+  // Extra Portion raises up to this many random inmates a tier.
+  const PORTION_INMATES = 3;
   // Crow Whispers shows the rarity behind this many locked cells.
   const CROW_CELLS = 4;
   // "Treasure" Hunt shows the rarity behind every locked cell below this
@@ -346,13 +343,6 @@
   };
   const GIFT_IDS = Object.keys(GIFTS);
 
-  const START_CELLS = [1, 2, 5, 6, 10, 11];
-  const LOADOUTS = {
-    supply: { name: 'Supply start', level: 'Standard', text: 'Six inmates and the Lost Ring of Keys. Build numbers for the mixed convoys.', inmates: [['mammoth', 0], ['lion', 0], ['wolf', 1], ['rat', 1], ['rat', 2], ['mammoth', 2]], tools: ['keys'] },
-    lean: { name: 'Lean start', level: 'Advanced', text: 'Three inmates and the Agonizing Muzzle. Keep the block small for big tier jumps.', inmates: [['mammoth', 0], ['lion', 0], ['wolf', 3]], tools: ['muzzle'] },
-    rats: { name: 'Rat-breeding start', level: 'Easier', text: 'Three inmates, the Squirming Iron Box and the Skewered Rat Heads. Breed Rats and pair them.', inmates: [['rat', 2], ['rat', 2], ['mammoth', 3]], tools: ['ironbox', 'skewer'] },
-  };
-
   const SCENARIOS = {
     empty: { name: 'Empty prison', text: 'Day 1 with all 15 prison cells sealed. Recommended for a first run.' },
     events: { name: 'Special events drill', text: 'The three doors on today’s route hide an Execution, a Chain reaction, and Behind Closed Doors or Ravenous Appetite.' },
@@ -361,35 +351,6 @@
     scratch: { name: 'Scratch drill', text: 'Wolves consume through scratched doors for +3.' },
     nest: { name: 'Rat nest drill', text: 'Leave a nest sealed for two days to hatch a Rare Rat.' },
   };
-
-  // Each challenge slot draws one variant from the seed. Deadlines fall at the
-  // end of days 4, 8 and 12; the last slot is the heavy contract.
-  const CONTRACT_SLOTS = [
-    {
-      deadline: 4,
-      variants: [
-        { id: 'mixed', name: 'Mixed convoy', needs: ['At least 3 inmates', 'At least 2 different beasts'] },
-        { id: 'cohort', name: 'Work gang', needs: ['At least 4 inmates', 'Any beast or rarity'] },
-        { id: 'veteran', name: 'Veteran-led crew', needs: ['At least 1 Rare or Legendary', 'At least 2 Normal or Magic'] },
-      ],
-    },
-    {
-      deadline: 8,
-      variants: [
-        { id: 'elite', name: 'Elite convoy', needs: ['At least 2 Rare or Legendary', 'At least 2 different beasts'] },
-        { id: 'kin', name: 'Kin escort', needs: ['At least 1 Legendary', 'Plus 1 of the same beast below Legendary'] },
-        { id: 'muster', name: 'Elite muster', needs: ['At least 3 Rare or Legendary', 'Any beast'] },
-      ],
-    },
-    {
-      deadline: 12,
-      heavy: true,
-      variants: [
-        { id: 'heavy', name: 'Heavy convoy', needs: ['At least 1 Supreme or Rainbow', 'Vault Rainbows count'] },
-        { id: 'bounty', name: 'Heavy bounty', needs: ['At least 1 Supreme or Rainbow', 'Vault Rainbows count'] },
-      ],
-    },
-  ];
 
   const SEED_WORDS = ['ASH', 'BONE', 'IRON', 'SALT', 'EMBER', 'CHAIN', 'GATE', 'WARD', 'HOWL', 'TUSK', 'FANG', 'MANE', 'CINDER', 'SHACKLE'];
 
@@ -450,8 +411,8 @@
     return out;
   }
 
-  // A side stream for public draws (contracts, refits), so showing them never
-  // shifts the dice that decide what is behind the doors.
+  // A side stream for public draws (the objective, the starting instruments),
+  // so showing them never shifts the dice that decide what is behind the doors.
   const sideStream = (state, label) => ({ rng: hashSeed(`${state.seed}|${label}`) });
 
   function randomSeed() {
@@ -481,11 +442,6 @@
       }
     }
     return p;
-  }
-
-  // The challenge's values are fixed.
-  function challengeParams() {
-    return JSON.parse(JSON.stringify(CHALLENGE_PARAMS));
   }
 
   // ---------- State helpers ----------
@@ -586,19 +542,26 @@
   // day.
   // used.noDevour / used.noSwap: the game shows no Consume / Replace card
   // today (the analyzer reads them), so that one isn't on offer, while the
-  // other still is.
+  // other still is. used.noHunt: no Hunt card either. used.huntOnly: the
+  // Hunt's pick is open, on these cells.
   // A Hunt (the Blood-Stained Trap) uses the day's action too.
   const canDevourNow = (state) => state.used.devour < 1 && !state.used.hunt && !state.used.noDevour && (state.used.swap < 1 || !!state.used.devourAfterSwap);
   const canSwapNow = (state) => state.used.devour < 1 && !state.used.hunt && !state.used.noSwap && state.used.swap < state.params.swapsPerDay;
 
   // Blood-Stained Trap: with the warden on a Lion that has no prey mark, a
   // Hunt can mark any inmate the Lion can consume that has none either.
+  // The analyzer's boards can say more: inmate.marked, an inmate wearing a
+  // Prey mark whose Lion isn't known (its crosshair, read from a picture),
+  // and used.huntOnly, the cells the game framed on the Hunt's pick.
   function huntTargets(state) {
     const here = state.cells[state.position];
-    if (!has(state, 'trap') || !here || here.sealed || !here.inmate || here.inmate.beast !== 'lion' || linkOf(state, here.inmate.id)) return [];
-    return boardCells(state).filter((c) => c.n !== here.n && canEat(state, here.inmate, c.inmate) && !linkOf(state, c.inmate.id)).map((c) => c.n);
+    if (!has(state, 'trap') || !here || here.sealed || !here.inmate || here.inmate.beast !== 'lion') return [];
+    const framed = state.used && Array.isArray(state.used.huntOnly) ? state.used.huntOnly : null;
+    if (framed) return framed.filter((n) => n !== here.n && state.cells[n] && !state.cells[n].sealed && state.cells[n].inmate);
+    if (linkOf(state, here.inmate.id)) return [];
+    return boardCells(state).filter((c) => c.n !== here.n && canEat(state, here.inmate, c.inmate) && !linkOf(state, c.inmate.id) && !c.inmate.marked).map((c) => c.n);
   }
-  const canHuntNow = (state) => state.phase === 'manage' && !state.chaining && state.used.devour < 1 && state.used.swap < 1 && !state.used.hunt && huntTargets(state).length > 0;
+  const canHuntNow = (state) => state.phase === 'manage' && !state.chaining && state.used.devour < 1 && state.used.swap < 1 && !state.used.hunt && !state.used.noHunt && huntTargets(state).length > 0;
 
   function startOptions(state) {
     const cell = state.cells[state.position];
@@ -783,7 +746,6 @@
     if (state.pending.length) return fail('Make your pending choice first.');
     if (state.chaining) return fail(canStopChain(state) ? 'Finish the consume chain first: pick its next meal, or stop it.' : 'The consume chain must go on: pick its next meal first.');
     if (state.phase === 'office') return fail('Choose Instigate or Bestow first.');
-    if (state.challenge && state.challenge.window) return fail('Finish the delivery window first.');
     if (state.phase === 'event') return fail('Decide on the special event first.');
     if (need === 'manage' && state.phase === 'patrol') return fail('Patrol first: walk to one of today’s destinations.');
     if (need === 'patrol' && state.phase !== 'patrol') return fail('Today’s patrol is done.');
@@ -801,21 +763,23 @@
 
   function newGame(options) {
     const opts = options || {};
-    const mode = opts.mode === 'challenge' ? 'challenge' : 'drill';
-    const scenario = mode === 'drill' && SCENARIOS[opts.scenario] ? opts.scenario : 'empty';
-    const loadout = mode === 'challenge' ? (LOADOUTS[opts.loadout] ? opts.loadout : 'supply') : null;
-    const params = mode === 'challenge' ? challengeParams(opts.params) : normalizeParams(opts.params);
+    // Every run is a drill (the contract challenge, which isn't in the live
+    // game, was removed on the user's word, 2026-10-17).
+    const mode = 'drill';
+    const scenario = SCENARIOS[opts.scenario] ? opts.scenario : 'empty';
+    const params = normalizeParams(opts.params);
     const seed = String(opts.seed || '').trim().toUpperCase().slice(0, 40) || randomSeed();
     const state = {
       v: VERSION,
       mode,
-      scenario: mode === 'drill' ? scenario : null,
-      loadout,
+      scenario,
       seed,
-      rng: hashSeed([seed, mode, scenario, loadout].join('|')),
+      // The key keeps its empty last field (the challenge's loadout), so
+      // every seed plays as it did.
+      rng: hashSeed(`${seed}|${mode}|${scenario}|`),
       params,
       day: 1,
-      maxDays: mode === 'challenge' ? CHALLENGE_DAYS : opts.startEvent === 'ironlaw' ? START_EVENTS.ironlaw.days : params.drillDays,
+      maxDays: opts.startEvent === 'ironlaw' ? START_EVENTS.ironlaw.days : params.drillDays,
       // A card shown before the run (START_EVENTS), or none.
       startEvent: START_EVENTS[opts.startEvent] ? opts.startEvent : null,
       phase: 'patrol',
@@ -840,7 +804,6 @@
       nextId: 1,
       log: [],
       stats: { patrols: 0, opened: 0, devours: 0, chains: 0, swaps: 0, executions: 0, best: 0 },
-      challenge: null,
       result: null,
     };
     // Most runs start with one special event showing (72% of players' first
@@ -849,8 +812,7 @@
     log(state, 'day', `Day 1 of ${state.maxDays}.`);
     const goal = OBJECTIVES[state.objective.id];
     log(state, 'tool', `Objective: ${goal.name}. ${goal.text}.`);
-    if (mode === 'challenge') setupChallenge(state);
-    else setupDrill(state);
+    setupDrill(state);
     return state;
   }
 
@@ -938,35 +900,6 @@
     const order = shuffle(sideStream(state, 'start-tools'), TOOL_IDS.filter((t) => !has(state, t)));
     for (let i = 0; i < picks; i++) state.pending.push({ kind: 'tool', options: order.slice(3 * i, 3 * i + 3), start: true });
     log(state, 'tool', picks === 1 ? 'Choose a starting instrument.' : `Choose ${picks} starting instruments, one at a time.`);
-  }
-
-  function setupChallenge(state) {
-    const kit = LOADOUTS[state.loadout];
-    kit.inmates.forEach(([beast, tier], i) => place(state, START_CELLS[i], beast, tier));
-    for (const cell of state.cells) if (!cell.sealed) cell.event = null;
-    state.tools = kit.tools.slice();
-    state.challenge = {
-      vouchers: START_VOUCHERS,
-      score: 0,
-      contracts: makeContracts(state),
-      deliveries: [],
-      window: null,
-    };
-    beginDay(state, []);
-    log(state, 'drill', `${kit.name}: ${plural(kit.inmates.length, 'inmate')} on the block. Deliver at least two contracts, including the heavy one, to pass.`);
-  }
-
-  function makeContracts(state) {
-    const stream = sideStream(state, 'contracts');
-    return CONTRACT_SLOTS.map((slot, i) => {
-      const v = pickOne(stream, slot.variants);
-      const contract = { slot: i, id: v.id, name: v.name, needs: v.needs.slice(), deadline: slot.deadline, heavy: !!slot.heavy };
-      if (v.id === 'bounty') {
-        contract.bounty = pickOne(stream, BEASTS);
-        contract.needs = ['At least 1 Supreme or Rainbow', `+8 points per Supreme or Rainbow ${beastName(contract.bounty)}`];
-      }
-      return contract;
-    });
   }
 
   // ---------- Day flow ----------
@@ -1144,8 +1077,8 @@
       gain = Math.max(1, meal.tier + 2 - eater.tier);
       notes.push(`Elephant-Foot Maul to ${tierName(Math.min(RAINBOW, meal.tier + 2))}`);
     }
-    // The Muzzle counts the block after the meal is gone.
-    if (has(state, 'muzzle') && boardCells(state).length - (option.scratch ? 0 : 1) <= 4) {
+    // The Muzzle counts the block before the meal goes, the meal included.
+    if (has(state, 'muzzle') && boardCells(state).length <= 4) {
       gain += 2;
       notes.push('Agonizing Muzzle +2');
     }
@@ -1260,6 +1193,10 @@
   function officeAct(state, choice) {
     if (state.phase !== 'office') return fail("Instigate and Bestow come with a visit to the warden's office.");
     if (state.pending.length) return fail('Make your pending choice first.');
+    // used.officeOnly: the game shows only that card (the analyzer reads
+    // them; report 383 had Bestow alone).
+    const only = state.used && state.used.officeOnly;
+    if (only && choice !== only) return fail(`Your game offers only ${only === 'bestow' ? 'Bestow' : 'Instigate'} today.`);
     const events = [];
     if (choice === 'instigate') instigate(state, events, 'Instigate');
     else if (choice === 'bestow') bestow(state, events, 'Bestow');
@@ -1398,6 +1335,21 @@
       const dark = high.length === 1 ? `cell ${cellLabel(high[0].n)} holds Rare or better` : `${low.length ? 'the other' : 'all'} ${high.length} locked cells hold Rare or better`;
       const text = low.length && high.length ? `${shown}; ${dark}` : low.length ? shown : high.length ? dark : 'no locked cell was left to reveal';
       log(state, 'event', `${eventName(kind)}: ${text}.`, { type: 'hunt', cells: low.map((c) => c.n), high: high.map((c) => c.n) });
+    } else if (kind === 'portion') {
+      // Up to 3 random inmates rise a tier; with fewer on the block, all of
+      // them. It stays among the Prison Incidents.
+      const pool = boardInmates(state).filter((i) => i.tier < RAINBOW);
+      const picks = shuffle(state, pool).slice(0, PORTION_INMATES);
+      const at = state.log.length;
+      const raised = picks.map((who) => ({ who: snap(who), cell: cellOf(state, who.id).n }));
+      for (const who of picks) if (boardCellOf(state, who.id)) promote(state, who, 1, false, events);
+      if (raised.length) {
+        const names = raised.map((r) => `the ${describe(r.who)} in cell ${cellLabel(r.cell)}`);
+        const who = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0];
+        logAt(state, at, 'event', `${eventName(kind)}: ${who} ${raised.length === 1 ? 'rises' : 'rise'} a tier.`, { type: kind, raised });
+      } else {
+        log(state, 'event', `${eventName(kind)}: nobody was on the block to rise.`, { type: kind, raised: [] });
+      }
     } else if (USURP[kind]) {
       // Random inmates rise (all of them for Usurpation IV), then this
       // Usurpation leaves the Prison Incidents and the next joins them.
@@ -1416,15 +1368,16 @@
       }
       state.eventPool = (state.eventPool || EVENT_POOL).filter((id) => id !== kind);
       if (u.next && !state.eventPool.includes(u.next)) state.eventPool.push(u.next);
-      if (kind === 'usurp1') {
-        // Usurpation I's card also puts Usurpation II behind a random
-        // locked door at once.
-        const free = state.cells.filter((c) => c.sealed && !c.event && !c.nest);
+      if (u.next) {
+        // Each Usurpation's card also puts the next one on a random free
+        // cell at once, as an Instigate would: a locked door, or an inmate's
+        // open cell (the user, 2026-10-18: any space, and not only I's).
+        const free = instigateCells(state);
         if (free.length) {
-          const door = pickOne(state, free);
-          door.event = 'usurp2';
-          door.seen = true;
-          log(state, 'event', `Usurpation II now waits behind cell ${cellLabel(door.n)}.`);
+          const cell = pickOne(state, free);
+          cell.event = u.next;
+          cell.seen = true;
+          log(state, 'event', `${eventName(u.next)} now waits ${cell.sealed ? 'behind' : 'in'} cell ${cellLabel(cell.n)}.`);
         }
       }
     } else if (kind === 'freedom') {
@@ -1497,9 +1450,10 @@
     countObjective(state, 'consume', 'consumes');
     const wasRat = eater.beast === 'rat';
     const wasLion = eater.beast === 'lion';
-    emptyCell(state, mealCell);
-    // The Muzzle counts the block after the meal is gone.
+    // The Muzzle counts the block before the meal goes, the meal included
+    // (the user, 2026-10-18).
     const crowd = boardCells(state).length;
+    emptyCell(state, mealCell);
     let gain = option.scratch ? 2 + (state.params.scratchStacksBase ? 1 : 0) : 1;
     const notes = [];
     if (option.scratch) notes.push(`scratch +${gain - 1}`);
@@ -1742,15 +1696,6 @@
   function endDay(state) {
     const blocked = guard(state, 'manage');
     if (blocked) return blocked;
-    const ch = state.challenge;
-    if (ch) {
-      const contract = currentContract(state);
-      if (contract && contract.deadline === state.day) {
-        ch.window = { early: false };
-        log(state, 'contract', `Delivery window: "${contract.name}" is due today. Deliver now or skip it.`);
-        return ok([{ type: 'window' }]);
-      }
-    }
     const events = [];
     advanceDay(state, events);
     return ok(events);
@@ -1769,7 +1714,6 @@
   }
 
   function finish(state, early) {
-    if (state.challenge) settleChallenge(state);
     state.phase = 'ended';
     state.destinations = [];
     state.event = null;
@@ -1782,14 +1726,12 @@
       cache: state.cache,
       best: Math.max(state.stats.best, ...roster.rows.map((r) => r.tier), 0),
       stats: Object.assign({}, state.stats),
-      challenge: state.challenge ? state.challenge.result : null,
     };
     log(state, 'end', early ? 'The run was closed early. The handoff roster is ready.' : 'The run is over. The handoff roster is ready.');
   }
 
   function endRun(state) {
     if (state.phase === 'ended') return fail('This run is already over.');
-    if (state.challenge) state.challenge.window = null;
     state.pending = [];
     if (state.chaining) {
       logDevour(state, state.chaining.at, state.chaining.bites);
@@ -1799,160 +1741,7 @@
     return ok([{ type: 'end' }]);
   }
 
-  // ---------- Contract challenge ----------
-
-  function currentContract(state) {
-    const ch = state.challenge;
-    return ch ? ch.contracts[ch.deliveries.length] || null : null;
-  }
-
-  function qualifies(contract, cargo) {
-    const beasts = new Set(cargo.map((p) => p.beast)).size;
-    const elite = cargo.filter((p) => p.tier === 2 || p.tier === 3).length;
-    switch (contract.id) {
-      case 'mixed': return cargo.length >= 3 && beasts >= 2;
-      case 'cohort': return cargo.length >= 4;
-      case 'veteran': return elite >= 1 && cargo.filter((p) => p.tier <= 1).length >= 2;
-      case 'elite': return elite >= 2 && beasts >= 2;
-      case 'kin': return cargo.some((p) => p.tier === 3 && cargo.some((q) => q !== p && q.beast === p.beast && q.tier < 3));
-      case 'muster': return elite >= 3;
-      default: return cargo.some((p) => p.tier >= SUPREME);
-    }
-  }
-
-  const cargoPoints = (cargo) => cargo.reduce((sum, p) => sum + 2 ** p.tier, 0);
-  const cargoBonus = (contract, cargo) => (contract.bounty ? cargo.filter((p) => p.tier >= SUPREME && p.beast === contract.bounty).length * 8 : 0);
-
-  function cargoOf(state, cellNumbers, vaultIds) {
-    const cargo = [];
-    for (const n of new Set(cellNumbers || [])) {
-      const c = state.cells[n];
-      if (!c || c.sealed || !c.inmate) return null;
-      cargo.push(c.inmate);
-    }
-    for (const id of new Set(vaultIds || [])) {
-      const v = state.vault.find((x) => x.id === id);
-      if (!v) return null;
-      cargo.push({ id: v.id, beast: v.beast, tier: RAINBOW });
-    }
-    return cargo;
-  }
-
-  function deliveryCheck(state, cellNumbers, vaultIds, escortKey) {
-    const ch = state.challenge;
-    const contract = currentContract(state);
-    const base = { ok: false, reason: '', pressure: 0, cost: 0, points: 0, bonus: 0, contract };
-    if (!ch || !ch.window || !contract) return Object.assign(base, { reason: 'No delivery window is open.' });
-    const cargo = cargoOf(state, cellNumbers, vaultIds);
-    if (!cargo) return Object.assign(base, { reason: 'Some of those inmates are no longer available.' });
-    if (!cargo.length) return Object.assign(base, { reason: 'Pick the inmates to send.' });
-    const escort = ESCORTS[escortKey];
-    if (!escort) return Object.assign(base, { reason: 'Choose an escort.' });
-    const pressure = cargo.reduce((sum, p) => sum + PRESSURE[p.tier], 0);
-    const bonus = cargoBonus(contract, cargo);
-    const result = Object.assign(base, { pressure, cost: escort.cost, points: cargoPoints(cargo) + bonus, bonus });
-    if (!qualifies(contract, cargo)) return Object.assign(result, { reason: `This cargo does not meet "${contract.name}": ${contract.needs.join('; ').toLowerCase()}.` });
-    if (pressure > escort.cap) return Object.assign(result, { reason: `Pressure ${pressure} is over the ${escort.name.toLowerCase()} limit of ${escort.cap}.` });
-    if (ch.vouchers < escort.cost) return Object.assign(result, { reason: `A ${escort.name.toLowerCase()} costs ${plural(escort.cost, 'voucher')}. You have ${ch.vouchers}.` });
-    return Object.assign(result, { ok: true, reason: `Meets "${contract.name}".` });
-  }
-
-  function afterDelivery(state, events) {
-    const ch = state.challenge;
-    const early = ch.window && ch.window.early;
-    ch.window = null;
-    if (state.day >= CHALLENGE_DAYS || early) {
-      finish(state, false);
-      events.push({ type: 'end' });
-      return;
-    }
-    advanceDay(state, events);
-  }
-
-  function deliver(state, cellNumbers, vaultIds, escortKey) {
-    if (state.mode !== 'challenge') return fail('Contracts only exist in the contract challenge.');
-    if (state.phase === 'ended') return fail('This run is over.');
-    const check = deliveryCheck(state, cellNumbers, vaultIds, escortKey);
-    if (!check.ok) return fail(check.reason);
-    const ch = state.challenge;
-    const contract = check.contract;
-    const cargo = cargoOf(state, cellNumbers, vaultIds);
-    const names = cargo.map(describe);
-    const events = [{ type: 'deliver', cells: [...new Set(cellNumbers || [])] }];
-    for (const n of new Set(cellNumbers || [])) emptyCell(state, state.cells[n]);
-    state.vault = state.vault.filter((v) => !(vaultIds || []).includes(v.id));
-    checkPrey(state);
-    ch.vouchers -= check.cost;
-    ch.score += check.points;
-    ch.deliveries.push({ slot: contract.slot, day: state.day, success: true, points: check.points, cost: check.cost, pressure: check.pressure, escort: escortKey, names, early: !!ch.window.early });
-    log(state, 'contract', `Delivered "${contract.name}" by ${ESCORTS[escortKey].name.toLowerCase()} (${plural(check.cost, 'voucher')}, pressure ${check.pressure}, ${check.points} points): ${names.join(', ')}.`, { type: 'deliver', name: contract.name, points: check.points, cells: [...new Set(cellNumbers || [])], vault: [...new Set(vaultIds || [])], escort: escortKey });
-    afterDelivery(state, events);
-    if (state.phase !== 'ended' && ch.deliveries.length <= 2) queueRefit(state, contract.slot);
-    return ok(events);
-  }
-
-  function skipDelivery(state) {
-    const ch = state.challenge;
-    if (!ch || !ch.window) return fail('No delivery window is open.');
-    if (ch.window.early) return fail('Close the early window instead. The heavy contract can still be delivered by day 12.');
-    const contract = currentContract(state);
-    ch.deliveries.push({ slot: contract.slot, day: state.day, success: false, points: 0, cost: 0, pressure: 0, escort: null, names: [], early: false });
-    log(state, 'contract', `Skipped "${contract.name}". Your inmates and vouchers stay put.`, { type: 'skip', name: contract.name });
-    const events = [];
-    afterDelivery(state, events);
-    return ok(events);
-  }
-
-  function canOpenEarly(state) {
-    const ch = state.challenge;
-    return !!ch && !ch.window && state.phase !== 'ended' && ch.deliveries.length === 2 && state.day >= 9 && state.day <= CHALLENGE_DAYS && ['patrol', 'manage'].includes(state.phase) && !state.pending.length && !state.event && !state.chaining;
-  }
-
-  function openEarlyDelivery(state) {
-    if (!canOpenEarly(state)) return fail('From day 9, once the first two contracts are settled, you can open the heavy delivery early.');
-    state.challenge.window = { early: true };
-    log(state, 'contract', 'Opened the heavy delivery window early. Delivering now ends the run.');
-    return ok([{ type: 'window' }]);
-  }
-
-  function cancelEarlyDelivery(state) {
-    const ch = state.challenge;
-    if (!ch || !ch.window || !ch.window.early) return fail('There is no early window to close.');
-    ch.window = null;
-    log(state, 'contract', 'Closed the early delivery window.');
-    return ok([]);
-  }
-
-  function settleChallenge(state) {
-    const ch = state.challenge;
-    if (ch.result) return;
-    while (ch.deliveries.length < 3) {
-      const c = ch.contracts[ch.deliveries.length];
-      ch.deliveries.push({ slot: c.slot, day: state.day, success: false, points: 0, cost: 0, pressure: 0, escort: null, names: [], early: false });
-    }
-    const completed = ch.deliveries.filter((d) => d.success).length;
-    const heavy = ch.deliveries.some((d) => d.slot === 2 && d.success);
-    const passed = completed >= 2 && heavy;
-    ch.result = { passed, grade: completed === 3 ? 'full' : passed ? 'passed' : 'failed', completed, score: ch.score, vouchers: ch.vouchers };
-  }
-
-  function refitOptions(state, slot, refreshed) {
-    const available = TOOL_IDS.filter((t) => !has(state, t));
-    const first = shuffle(sideStream(state, `refit|${slot}|0`), available).slice(0, 3);
-    if (!refreshed) return first;
-    const order = shuffle(sideStream(state, `refit|${slot}|1`), available);
-    return [...order.filter((id) => !first.includes(id)), ...order.filter((id) => first.includes(id))].slice(0, 3);
-  }
-
-  function queueRefit(state, slot) {
-    const options = refitOptions(state, slot, false);
-    if (!options.length) {
-      log(state, 'tool', 'Refit: you already hold every tool.');
-      return;
-    }
-    state.pending.unshift({ kind: 'refit', slot, options, refreshed: false });
-    log(state, 'tool', 'Refit: choose a tool for the rest of the run.');
-  }
+  // ---------- Choices: instruments and gifts ----------
 
   function choose(state, id) {
     const choice = state.pending[0];
@@ -1995,22 +1784,6 @@
     return ok([]);
   }
 
-  function canRefresh(state) {
-    const choice = state.pending[0];
-    if (!choice || choice.kind !== 'refit' || choice.refreshed || state.challenge.vouchers < 1) return false;
-    return TOOL_IDS.filter((t) => !has(state, t)).length > choice.options.length;
-  }
-
-  function refreshRefit(state) {
-    if (!canRefresh(state)) return fail('This refit cannot be refreshed: it needs 1 voucher, works once, and only when unseen tools remain.');
-    const choice = state.pending[0];
-    state.challenge.vouchers -= 1;
-    choice.options = refitOptions(state, choice.slot, true);
-    choice.refreshed = true;
-    log(state, 'tool', 'Refreshed the refit offer for 1 voucher.');
-    return ok([]);
-  }
-
   function applyGift(state, id, events) {
     log(state, 'tool', `Warden's Treasure: ${GIFTS[id].name}.`, { type: 'gift', id });
     if (id === 'ring') {
@@ -2041,10 +1814,9 @@
     }
   }
 
-  // ---------- Lab (drills only) ----------
+  // ---------- Lab ----------
 
   function labCheck(state) {
-    if (state.mode !== 'drill') return fail('The Lab only edits drills. The contract challenge uses fixed rules.');
     if (state.phase === 'ended') return fail('This run is over.');
     if (state.phase === 'event' || state.phase === 'office' || state.pending.length || state.chaining) return fail('Finish the current decision first.');
     return null;
@@ -2098,6 +1870,7 @@
     if (blocked) return blocked;
     if (!has(state, 'trap')) return fail('Only the Blood-Stained Trap offers a Hunt.');
     if (state.used.devour > 0 || state.used.swap > 0 || state.used.hunt) return fail('A day has a Consume, a Replace or a Hunt. End the day.');
+    if (state.used.noHunt) return fail('Your game offers no Hunt today.');
     if (!huntTargets(state).includes(to)) return fail("A Hunt marks an inmate the Lion in the warden's cell can consume, when neither has a prey mark.");
     const lion = state.cells[state.position].inmate;
     const prey = state.cells[to].inmate;
@@ -2154,7 +1927,7 @@
 
   function choiceScore(state, id) {
     const board = boardInmates(state);
-    const small = board.length <= 5;
+    const small = board.length <= 4;
     switch (id) {
       case 'muzzle': return small ? 30 : 8;
       case 'skewer': return board.filter((i) => i.beast === 'rat').length * 8;
@@ -2193,48 +1966,6 @@
       case 'brand': return board.filter((i) => !devourOptions(state, cellOf(state, i.id).n).length).length * 5;
       default: return 0;
     }
-  }
-
-  // Finds the cargo with the most points for the open window, then the
-  // cheapest escort. Before the heavy contract it always keeps one voucher,
-  // since the run can't pass without the heavy contract.
-  function bestCargo(state) {
-    const ch = state.challenge;
-    const contract = currentContract(state);
-    if (!ch || !ch.window || !contract) return null;
-    // The strongest 14 candidates keep the search small on a crowded block.
-    const pool = [
-      ...state.vault.map((v) => ({ kind: 'vault', key: v.id, p: { id: v.id, beast: v.beast, tier: RAINBOW } })),
-      ...boardCells(state).map((c) => ({ kind: 'cell', key: c.n, p: c.inmate })),
-    ].sort((a, b) => b.p.tier - a.p.tier).slice(0, 14);
-    let best = null;
-    const pick = [];
-    const walk = (i, pressure) => {
-      if (i === pool.length) {
-        if (!pick.length) return;
-        const cargo = pick.map((x) => x.p);
-        if (!qualifies(contract, cargo)) return;
-        for (const key of ['light', 'heavy']) {
-          const e = ESCORTS[key];
-          if (pressure > e.cap || ch.vouchers < e.cost) continue;
-          if (!contract.heavy && ch.vouchers - e.cost < 1) continue;
-          const points = cargoPoints(cargo) + cargoBonus(contract, cargo);
-          if (!best || points > best.points || (points === best.points && e.cost < best.cost)) {
-            best = { points, cost: e.cost, escort: key, pressure, cells: pick.filter((x) => x.kind === 'cell').map((x) => x.key), vaultIds: pick.filter((x) => x.kind === 'vault').map((x) => x.key) };
-          }
-        }
-        return;
-      }
-      walk(i + 1, pressure);
-      const extra = PRESSURE[pool[i].p.tier];
-      if (pressure + extra <= ESCORTS.heavy.cap) {
-        pick.push(pool[i]);
-        walk(i + 1, pressure + extra);
-        pick.pop();
-      }
-    };
-    walk(0, 0);
-    return best;
   }
 
   // Scores one devour for the advisor, with a full and a short description.
@@ -2296,12 +2027,6 @@
         { kind: 'office', choice: 'instigate', score: 12, text: `Instigate: ${plural(instigateCount(state), 'special event')} on a random cell, a locked door or an inmate's.` },
       ].sort((a, b) => b.score - a.score);
     }
-    if (state.challenge && state.challenge.window) {
-      const best = bestCargo(state);
-      if (!best) return [{ kind: 'note', text: state.challenge.window.early ? 'No cargo meets the heavy contract yet. Close the early window and keep building.' : 'No cargo meets this contract. Skip it to keep your inmates and vouchers.' }];
-      const names = [...best.cells.map((n) => `${describe(state.cells[n].inmate)} (${cellLabel(n)})`), ...best.vaultIds.map(() => 'a vault Rainbow')];
-      return [{ kind: 'cargo', cargo: best, text: `Send ${names.join(', ')} by ${ESCORTS[best.escort].name.toLowerCase()}: ${best.points} points, pressure ${best.pressure}.` }];
-    }
     if (state.phase === 'event' && state.event) {
       if (state.event.kind === 'execution') {
         const victims = executionVictims(state, state.event.cell);
@@ -2316,12 +2041,13 @@
       if (state.event.kind === 'convict') return [{ kind: 'event', accept: true, text: 'Accept: a locked cell opens on a Legendary or better inmate.' }];
       if (state.event.kind === 'crow') return [{ kind: 'event', accept: true, text: `Accept: the rarity behind the next ${CROW_CELLS} locked cells is shown.` }];
       if (state.event.kind === 'freedom') return [{ kind: 'event', accept: true, text: `Accept: ${FREEDOM_CELLS} random locked cells open.` }];
+      if (state.event.kind === 'portion') return [{ kind: 'event', accept: true, text: `Accept: up to ${PORTION_INMATES} random inmates rise a tier.` }];
       if (USURP[state.event.kind]) {
         const u = USURP[state.event.kind];
         return [{ kind: 'event', accept: true, text: `Accept: ${u.count === 'all' ? 'every inmate rises' : u.count === 1 ? 'a random inmate rises' : `${u.count} random inmates rise`} ${u.by === 1 ? 'a tier' : `${u.by} tiers`}.` }];
       }
       if (state.event.kind === 'ratway') return [{ kind: 'event', accept: true, text: 'Accept: move to any cell but the office, and open it if it is locked.' }];
-      const keepSmall = has(state, 'muzzle') && board.length <= 5;
+      const keepSmall = has(state, 'muzzle') && board.length <= 4;
       return [{ kind: 'event', accept: !keepSmall, text: keepSmall ? 'Skip: a chain would flood the block and switch off the Agonizing Muzzle.' : 'Accept: your next patrol opens every sealed cell on the way to its destination.' }];
     }
     if (state.phase === 'patrol') {
@@ -2332,7 +2058,7 @@
         if (!c.sealed && c.inmate) {
           // Walking to a known inmate makes it the one that devours today.
           const best = devourOptions(state, n).map((o) => devourTip(state, n, o, 'devour')).sort((a, b) => b.score - a.score)[0];
-          score = best ? 10 + best.score : has(state, 'muzzle') && board.length <= 5 ? 8 : 2;
+          score = best ? 10 + best.score : has(state, 'muzzle') && board.length <= 4 ? 8 : 2;
           why = best ? `its ${describe(c.inmate)} can then consume (${best.short})` : `its ${describe(c.inmate)} has no target from there`;
         } else if (!c.sealed) {
           score = 1;
@@ -2372,15 +2098,10 @@
     tips.sort((a, b) => b.score - a.score);
     const out = tips.filter((t) => t.score > 0).slice(0, 4);
     if (!out.length) {
-      const due = currentContract(state);
       const waits = [];
       if (state.prey.length) waits.push('prey marks grow');
       if (state.cells.some((c) => c.nest)) waits.push('nests hatch');
-      const deliveryDay = due && due.deadline === state.day;
-      out.push({ kind: 'end', text: deliveryDay ? `Nothing left to do on the block. End the day to open the "${due.name}" delivery.` : `Nothing on the block is worth doing now. End the day${waits.length ? ` so ${waits.join(' and ')}` : ''}.` });
-    }
-    if (canOpenEarly(state) && (board.some((i) => i.tier >= SUPREME) || state.vault.length)) {
-      out.push({ kind: 'early', text: 'You hold a Supreme or Rainbow: you can deliver the heavy contract now and end the run.' });
+      out.push({ kind: 'end', text: `Nothing on the block is worth doing now. End the day${waits.length ? ` so ${waits.join(' and ')}` : ''}.` });
     }
     return out;
   }
@@ -2401,7 +2122,12 @@
     if (data && data.app === 'tartarus-sim') data = data.state;
     const valid = data && data.v === VERSION && Array.isArray(data.cells) && data.cells.length === CELL_COUNT && Array.isArray(data.log) && typeof data.day === 'number';
     if (!valid) throw new Error('That save is not from this version of the simulator.');
-    data.params = data.mode === 'challenge' ? challengeParams(data.params) : normalizeParams(data.params);
+    // The contract challenge is gone (it isn't in the live game).
+    if (data.mode === 'challenge') throw new Error('That save is a contract challenge, which the simulator no longer has. Start a new run.');
+    data.mode = 'drill';
+    delete data.challenge;
+    delete data.loadout;
+    data.params = normalizeParams(data.params);
     data.prey = Array.isArray(data.prey) ? data.prey : [];
     data.vault = Array.isArray(data.vault) ? data.vault : [];
     data.tools = Array.isArray(data.tools) ? data.tools.filter((t) => TOOLS[t]) : [];
@@ -2451,9 +2177,9 @@
   };
 
   const api = {
-    VERSION, CELL_COUNT, OFFICE, SUPREME, RAINBOW, VAULT_SLOTS, TIERS, BEASTS, BEAST_INFO, FOOD_CHAIN, SECOND_MEAL, PRESSURE, ESCORTS, TOOLS, TOOL_IDS, GIFTS, GIFT_IDS,
-    EVENTS, EVENT_IDS, EVENT_POOL, USURP, APPETITE_TRIES, APPETITE_ODDS, INSTIGATE_EVENTS, INSTIGATE_EVENTS_EMPTY, instigateCells, instigateCount, CROW_CELLS, HUNT_BELOW, FREEDOM_CELLS, OBJECTIVES, OBJECTIVE_IDS, START_EVENTS,
-    LOADOUTS, SCENARIOS, CONTRACT_SLOTS, DEFAULT_PARAMS, PARAM_FIELDS, CHALLENGE_DAYS, START_VOUCHERS,
+    VERSION, CELL_COUNT, OFFICE, SUPREME, RAINBOW, VAULT_SLOTS, TIERS, BEASTS, BEAST_INFO, FOOD_CHAIN, SECOND_MEAL, TOOLS, TOOL_IDS, GIFTS, GIFT_IDS,
+    EVENTS, EVENT_IDS, EVENT_POOL, USURP, PORTION_INMATES, APPETITE_TRIES, APPETITE_ODDS, INSTIGATE_EVENTS, INSTIGATE_EVENTS_EMPTY, instigateCells, instigateCount, CROW_CELLS, HUNT_BELOW, FREEDOM_CELLS, OBJECTIVES, OBJECTIVE_IDS, START_EVENTS,
+    SCENARIOS, DEFAULT_PARAMS, PARAM_FIELDS,
     newGame, randomSeed, normalizeParams, serialize, deserialize,
     patrol: bounded(patrol),
     resolveEvent: bounded(acted(resolveEvent)),
@@ -2465,20 +2191,15 @@
     hunt: bounded(acted(hunt)),
     endDay: bounded(endDay),
     endRun: bounded(endRun),
-    deliver: bounded(deliver),
-    skipDelivery: bounded(skipDelivery),
-    openEarlyDelivery: bounded(openEarlyDelivery),
-    cancelEarlyDelivery: bounded(cancelEarlyDelivery),
     choose: bounded(choose),
-    refreshRefit: bounded(refreshRefit),
     rerollOffer: bounded(rerollOffer),
     editCell: bounded(editCell),
     markPrey: bounded(markPrey),
     moveWarden: bounded(moveWarden),
     addTool: bounded(addTool),
     removeTool: bounded(removeTool),
-    patrolOptions, clockwisePath, devourOptions, startOptions, chainOptions, canStopChain, cageFight, gainFor, executionVictims, canEat, eatsOf, canDevourNow, canSwapNow, canHuntNow, huntTargets, canOpenEarly, canRefresh, canReroll,
-    linkOf, cellOf, boardInmates, currentContract, deliveryCheck, bestCargo, rosterOf, advise, limits,
+    patrolOptions, clockwisePath, devourOptions, startOptions, chainOptions, canStopChain, cageFight, gainFor, executionVictims, canEat, eatsOf, canDevourNow, canSwapNow, canHuntNow, huntTargets, canReroll,
+    linkOf, cellOf, boardInmates, rosterOf, advise, limits,
     toolText, toolName, eventName, describe, tierName, beastName, cellLabel, plural, stepsBetween, scarceBeasts, lowestInmates,
   };
 

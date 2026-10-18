@@ -43,9 +43,18 @@
     if (f.log === 'gone') return line('warn', 'The game log isn’t there right now. It’s followed again once the game writes it.', button('Choose it', 'pick-log'));
     if (f.log === 'error') return line('bad', `The game log can’t be read: ${f.error || 'retrying'}.`, button('Choose it', 'pick-log'));
     if (f.log !== 'on') return line('busy', 'Connecting the game log…');
-    // Windows stops a window share from an app that isn't run as
-    // administrator when the game is (report 214).
-    if (f.window !== 'on' && g.adminBlock) return line('warn', 'The game runs as administrator, so Windows won’t let the app share its window. Quit Tartarus Overlay from its tray icon, then start it with right-click → Run as administrator.');
+    // Windows won't share the game window: a game run as administrator
+    // (report 214), or "Could not start video source" (reports 307, 326,
+    // 342, 350, even with this app as administrator too). The screen it's
+    // on can be shared instead, cut to the game window, once the player says
+    // yes here.
+    // A window share that starts but gives blank pictures counts too, and
+    // with the game as administrator a window share isn't trusted at all
+    // (reports 361 and 362).
+    const wontShare = !(f.window === 'on' && f.shared === 'screen') && (g.adminBlock || !!(f.diag && f.diag.wontShare));
+    if (wontShare && state.shell.screenShare === null) return line('warn', `${g.adminBlock ? 'The game runs as administrator, so Windows' : 'Windows'} won’t let the app share the game window. It can share the screen the game is on instead: every picture is cut to the game window’s area before anything reads or keeps it, and taken only while the game is the window in front. You can turn this off in the tray menu.`, button('Share the screen', 'screen-yes', true), button('No', 'screen-no'));
+    if (wontShare && state.shell.screenShare === false && g.adminBlock) return line('warn', 'The game runs as administrator, so Windows won’t let the app share its window. Allow sharing the game’s screen in the tray menu, or start the app with right-click → Run as administrator.');
+    if (wontShare && state.shell.screenShare === false) return line('warn', 'Windows won’t let the app share the game window. Allow sharing the game’s screen in the tray menu, cut to the game window, to get pictures.');
     if (f.window !== 'on') return line('busy', 'Sharing the game window…');
     // The game's own Enable Log is off: its log has none of the lines the
     // triggers look for, so no pictures come (js/capture.js tells).
@@ -53,7 +62,7 @@
     // The game writes to its log all the time: one that stopped growing
     // isn't the one it's writing, and no pictures come.
     const grew = f.diag && f.diag.growingAt;
-    if (grew && Date.now() - grew > 120000) return line('warn', `The game log hasn’t changed for ${Math.round((Date.now() - grew) / 60000)} minutes: it may not be the one the game writes. Choose the game’s UE_game.log.`, button('Choose it', 'pick-log'), button('Debug report', 'debug-report'));
+    if (grew && Date.now() - grew > 120000) return line('warn', `The game log hasn’t changed for ${Math.round((Date.now() - grew) / 60000)} minutes. Turn on Enable Log in the game (press Esc, under Account Related), then log out and back in. If it’s on, choose the game’s UE_game.log.`, button('Choose it', 'pick-log'), button('Debug report', 'debug-report'));
     return null;
   }
 
@@ -68,7 +77,7 @@
     if (!state.game.running) return 'Waiting for the game';
     if (sh.riot) return 'Riot: fight on';
     if (sh.runOver) return 'Run over: ready for the next';
-    if (f && f.window !== 'on' && state.game.adminBlock) return 'Run the app as administrator';
+    if (f && f.window !== 'on' && state.game.adminBlock && sh.screenShare !== true) return sh.screenShare === null ? 'Share the game’s screen? Unfold to answer' : 'Allow the screen share in the tray';
     if (f && (f.log !== 'on' || f.window !== 'on')) return 'Connecting…';
     if (f && f.detail === 'off') return 'Turn on Enable Log in the game';
     if (a && a.reading) return 'Reading the picture…';
@@ -105,7 +114,7 @@
 
     if (a && a.toolsConfirm) out.push(line('warn', a.toolsConfirm, button('These are right', 'tools-ok'), button('Board', 'board')));
     // A game client not in English: a screen the reader didn't recognize.
-    if (a && a.langMiss && Date.now() - a.langMiss.at < 120000) out.push(line('warn', a.langMiss.what === 'board' ? `Your game is in ${a.langMiss.lang}: set today's doors and decisions by hand on the board analyzer, and send it this board's screenshot once, to help it learn your language.` : `The ${a.langMiss.what} wasn't read (your game is in ${a.langMiss.lang}). Set it on the board analyzer, and send the screenshot from there.`, button('Board', 'board')));
+    if (a && a.langMiss && Date.now() - a.langMiss.at < 120000) out.push(line('warn', a.langMiss.what === 'board' ? `Your game is in ${a.langMiss.lang}: check today's doors, and set the Replace and Consume decisions by hand on the board analyzer, and send it this board's screenshot once, to help it learn your language.` : `The ${a.langMiss.what} wasn't read (your game is in ${a.langMiss.lang}). Set it on the board analyzer, and send the screenshot from there.`, button('Board', 'board')));
     // The Warden's Treasure covers the board: the gift waits for a look at it.
     if (a && a.treasureWait) out.push(line('warn', 'The Warden’s Treasure is open. Press View Prison Status in the game, wait a second on the board, then go back to the Treasure: the gift advice uses that board.', button('Advise anyway', 'treasure-now')));
     if (a && a.problems && a.problems.length) {

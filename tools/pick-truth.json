@@ -24,6 +24,21 @@
       "ravenous",
       "blacklist",
       "dogtag"
+    ],
+    "pick-report-278.png": [
+      "muzzle",
+      "hook",
+      "rope"
+    ],
+    "pick-2026-10-17-forged-a.png": [
+      "scales",
+      "forged",
+      "dogtag"
+    ],
+    "pick-2026-10-17-forged-b.png": [
+      "forged",
+      "shortchain",
+      "shackles"
     ]
   },
   "panels": {
@@ -42,10 +57,15 @@
     "panel-2026-10-17-shackles-claws.png": [
       "shackles",
       "claws"
+    ],
+    "panel-2026-10-18-coin-trap.png": [
+      "coin",
+      "trap"
     ]
   },
   "badges": {
     "badge-opulence_2026-10-17.png": "opulence",
-    "badge-tyranny_2026-10-17.png": "tyranny"
+    "badge-tyranny_2026-10-17.png": "tyranny",
+    "badge-cagefight_2026-10-18.png": "cagefight"
   }
 }

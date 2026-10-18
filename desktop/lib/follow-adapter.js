@@ -103,16 +103,74 @@
     if (game.running && !stoppedWindow && st.window !== 'on' && !sharing) {
       sharing = true;
       try {
-        await C.connectWindow();
+        // Windows won't share the game window (a game run as administrator,
+        // or "Could not start video source"), and the player allowed the
+        // screen it's on instead, in the overlay: that screen, with every
+        // picture cut to the game window by js/capture.js.
+        const screen = await useScreen();
+        if (screen) {
+          C.useCrop(() => D.gameCrop());
+          D.shareScreen(true);
+        }
+        await C.connectWindow(screen ? { screen: true } : undefined);
       } catch (e) {
         // The game window closed as it was being shared, say: a later try
         // retries. Why, for the debug log and report (report 175 had none).
         diag.shareError = String((e && e.message) || e).slice(0, 200);
         diag.shareErrorAt = Date.now();
+        if (WONT_SHARE.test(diag.shareError)) refused += 1;
+        diag.wontShare = refused >= 2;
       }
       sharing = false;
     }
   }
+
+  // Windows won't share the game window: "Could not start video source"
+  // twice in a row for the game as it runs now (once can be the game
+  // closing as it was shared, reports 356 and 357). A window share that
+  // holds, or the game starting again, clears it.
+  const WONT_SHARE = /could not start video source|notreadable/i;
+  let refused = 0;
+  async function useScreen() {
+    if (typeof C.useCrop !== 'function' || typeof D.screenShare !== 'function') return false;
+    if (!game.adminBlock && !diag.wontShare) return false;
+    const s = await D.screenShare();
+    return !!(s && s.allowed);
+  }
+  // A window share that started but gives only blank pictures (reports 361
+  // and 362: a game run as administrator) is one Windows won't give either:
+  // two in a row. And with the game as administrator, a window share isn't
+  // to be trusted at all: once the screen is allowed, the share moves there.
+  let blank = 0;
+  function onShared(f) {
+    if (!f.frame || C.state.shared !== 'window') return;
+    blank = f.blank ? blank + 1 : 0;
+    if (blank >= 2 && !diag.wontShare) {
+      diag.wontShare = true;
+      diag.shareError = 'The shared game window gives blank pictures.';
+      diag.shareErrorAt = Date.now();
+      tell();
+      toScreen();
+    }
+  }
+  let moving = false;
+  async function toScreen() {
+    if (moving || sharing || C.state.window !== 'on' || C.state.shared !== 'window') return;
+    moving = true;
+    try {
+      if (await useScreen()) {
+        C.stopWindow();
+        retryAt = 0;
+        retryWait = 5000;
+        await sync();
+      }
+    } finally {
+      moving = false;
+    }
+  }
+  setInterval(() => {
+    if (game.adminBlock || diag.wontShare) toScreen();
+  }, 5000);
 
   // The page's own Stop buttons are the player's: respect them.
   document.addEventListener('click', (e) => {
@@ -176,7 +234,7 @@
   const tell = () => {
     const st = C.state;
     diag.lastNote = lastCaptureNote();
-    D.follow({ agreed: C.agreed(), log: st.log, file: st.file, window: st.window, windowSize: st.windowSize, frames: st.frames, lines: st.lines, hits: st.hits, detail: st.detail || '', error: st.error, note: st.note, lastFrame, logFound: !!game.log, logThere: !!(game.log && game.log.there), running: game.running, diag });
+    D.follow({ agreed: C.agreed(), log: st.log, file: st.file, window: st.window, windowSize: st.windowSize, shared: st.shared || '', frames: st.frames, lines: st.lines, hits: st.hits, detail: st.detail || '', error: st.error, note: st.note, lastFrame, logFound: !!game.log, logThere: !!(game.log && game.log.there), running: game.running, diag });
   };
   C.on('hit', (h) => {
     diag.triggers[h.kind] = (diag.triggers[h.kind] || 0) + 1;
@@ -210,6 +268,7 @@
     if (st.window === 'off' && !game.running) stoppedWindow = false;
     if (wasShared && st.window === 'off' && game.running && !stoppedWindow) retryAt = Math.max(retryAt, Date.now() + 2500);
     wasShared = st.window === 'on';
+    if (st.window === 'on' && st.shared === 'window' && !blank) refused = 0;
     tell();
   });
   setInterval(() => {
@@ -225,6 +284,7 @@
     sync();
   }, 1000);
   C.on('frame', (f) => {
+    onShared(f);
     lastFrame = { at: Date.now(), kind: f.kind, ok: !!f.frame, why: f.why || '' };
     if (!f.frame) diag.failed += 1;
     tell();
@@ -249,10 +309,21 @@
 
   function onGame(g) {
     const started = g.running && !game.running;
+    // The game's window changed as it runs (a launcher with its title was
+    // taken first, reports 371 and 372): shared again.
+    const moved = g.running && game.running && g.window && game.window && g.window !== game.window;
     game = g;
+    if (moved && C.state.window === 'on') {
+      C.stopWindow();
+      retryAt = 0;
+      retryWait = 5000;
+    }
     if (started) {
       stoppedLog = false;
       stoppedWindow = false;
+      refused = 0;
+      blank = 0;
+      diag.wontShare = false;
     }
     sayHow();
     tell();
@@ -261,6 +332,13 @@
   D.onGame(onGame);
   D.onCommand((cmd) => {
     if (cmd === 'capture') C.captureNow('manual');
+    // The player answered about sharing the game's screen: try again now.
+    if (cmd === 'share-again') {
+      retryAt = 0;
+      retryWait = 5000;
+      if (C.state.window === 'on') C.stopWindow();
+      sync();
+    }
   });
 
   D.game().then((g) => {

@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600;700&family=Big+Shoulders+Stencil+Display:wght@600;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="css/style.css?v=20261017h">
+<link rel="stylesheet" href="css/style.css?v=20261018m">
 <style>
   /* A long read in the simulator's look, like the strategy guide. */
   .guide {
@@ -365,7 +365,7 @@
         <li>Log out and back in. The game starts writing its log only after you log in again.</li>
       </ol>
       <figure>
-        <img src="img/enable-log.webp?v=20261017h" width="803" height="395" alt="The game's Esc menu, under Account Related: Account Center, Redeem Code, Player Service, and the Enable Log button.">
+        <img src="img/enable-log.webp?v=20261018m" width="803" height="395" alt="The game's Esc menu, under Account Related: Account Center, Redeem Code, Player Service, and the Enable Log button.">
         <figcaption>Press Esc in the game: Enable Log is under Account Related.</figcaption>
       </figure>
       <p class="note">If pictures come only when you press Take a picture now, the game's log is still off: turn it on here, then log out and back in.</p>
@@ -443,7 +443,7 @@
     <ul class="facts">
       <li><b>Nothing before you agree.</b> Until you agree at the bottom of this page, its controls stay hidden: nothing can open your log or see any window, and the board analyzer takes no pictures.</li>
       <li><b>One file, read only.</b> It reads the game log you drag onto this page or choose (<code>UE_game.log</code>), and only the lines the game writes after you connect it. It can't open any other file, and it never changes the log.</li>
-      <li><b>One window, only with the log connected.</b> It takes pictures of the one window you share, never a whole screen or a browser tab. It only does so while the game log is connected: when the log shows a move, or when you press Take a picture now, here or on the board analyzer (which asks this page to take it). Nothing is recorded in between.</li>
+      <li><b>One window, only with the log connected.</b> It takes pictures of the one window you share, never a whole screen or a browser tab, except in the desktop app when Windows won't share the game window and you allow it: then the screen the game is on, with each picture cut to the game window and taken only while the game is in front. It only does so while the game log is connected: when the log shows a move, or when you press Take a picture now, here or on the board analyzer (which asks this page to take it). Nothing is recorded in between.</li>
       <li><b>Pictures stay in your browser.</b> This page hands each picture to the board analyzer open in another tab, which reads the board from it with the screenshot reader. The picture passes between the two tabs inside your browser. Pictures are kept as small previews in memory and are gone when you close the tabs. Auto Screenshot Mode never uploads a picture or your log.</li>
       <li><b>Boards, only if you share boards.</b> The board the analyzer reads from each picture is treated like any board you ask about. If board sharing is on (the switch under the analyzer's ask button), the board is shared for the odds study: its cells, day and tools, with no picture and nothing about you. It's shared once the next picture comes in, so a board you fixed is shared as you fixed it. Turn that switch off and nothing is shared.</li>
       <li><b>In the desktop app.</b> Tartarus Overlay finds the log and the game window itself, with no picker, and keeps your last 5 runs' pictures, boards and advice on your PC to review. See <a href="#desktop">In the desktop app</a>.</li>
@@ -477,7 +477,7 @@
     <div class="code" data-file="js/capture.js" data-region="pick-log"></div>
 
     <h3>3. It reads only the new lines</h3>
-    <p>Once a second, the follower checks whether the log has grown, and reads only the part added since its last look. It starts at the end of the log, so nothing written before you connected is ever read. Each new line is checked against the triggers below. A line that matches nothing is dropped; a line that matches the watch pattern is shown to you on the page. It runs in a background worker, so it keeps up when the tab is hidden. However the log changes, each look reads at most the newest megabyte and passes at most 200 lines to the page, so the page never has more than it can handle. If the log is deleted, the follower waits, and reads the next log the game writes from its start.</p>
+    <p>Once a second, the follower checks whether the log has grown, and reads only the part added since its last look. It starts at the end of the log, so nothing written before you connected is ever read. Each new line is checked against the triggers below. A line that matches nothing is dropped; a line that matches the watch pattern is shown to you on the page. It runs in a background worker, so it keeps up when the tab is hidden. However the log changes, each look reads at most the newest megabyte and passes at most 200 lines to the page, so the page never has more than it can handle. If the log is deleted, the follower waits, and reads the next log the game writes from its start. The game also writes its language in the log every few minutes (a line with <code>sdkLang=…</code>). The follower notes only that language code, so the analyzer can tell you when names and labels may not be read. Nothing else from that line is kept, shown or sent.</p>
     <div class="code" data-file="js/capture.js" data-region="read-log"></div>
 
     <h3>4. It watches for moves</h3>
@@ -487,7 +487,7 @@
     <div class="code" data-file="js/capture.js" data-region="triggers"></div>
 
     <h3>5. It takes one picture of the window you shared</h3>
-    <p><code>connectWindow</code> asks the browser to share a window, which you pick. <code>useStream</code> turns away a whole screen or a browser tab and stops that share at once. <code>grab</code> takes a single still frame, and only when the check from step 1 allows it. In Chrome and Edge, nothing plays the window as video in between.</p>
+    <p><code>connectWindow</code> asks the browser to share a window, which you pick. <code>useStream</code> turns away a whole screen or a browser tab and stops that share at once; only the desktop app can hand it a screen, through <code>useCrop</code>, and only after you've allowed it (see the desktop app below). <code>grab</code> takes a single still frame, and only when the check from step 1 allows it. On such a screen it first asks the app where the game window is: if the game isn't the window in front, it takes nothing, and otherwise it cuts the frame to the game window before the frame leaves <code>grab</code>, so nothing else on the screen is read, kept or sent. In Chrome and Edge, nothing plays the window as video in between.</p>
     <div class="code" data-file="js/capture.js" data-region="share-window"></div>
 
     <h3>6. The picture goes to your board analyzer</h3>
@@ -496,7 +496,7 @@
 
     <h3>7. The analyzer reads it into your board</h3>
     <p>The analyzer answers only after you've agreed, and reads only the pictures sent to it. The screenshot reader, running in your browser, turns the picture into a board, which becomes your board straight away, and the analyzer gives its advice. Cells the reader is unsure of are marked Check. If anything doesn't match your game, fix it on the board and press Recheck. A picture of the objective popup sets the run's objective, read from its title. A picture of the instrument pick is read as that instead: the analyzer starts a fresh run at the offer, with the three instruments it read and whether a re-roll is left, and says which to take, or to re-roll. The instruments are read by their printed names first, with an OCR engine (Tesseract) that the analyzer downloads once from jsDelivr, a public code host, and runs in your browser: the picture itself isn’t sent anywhere. Where a name isn’t clear, the card’s art is used. An instrument it's unsure of is named for you to check. Only how the reading went goes back to this page. Nothing is uploaded.</p>
-    <p>The analyzer also shows, at its top, whether Auto Screenshot Mode is running. This page tells it whether the log is followed and the window shared, whether the game is writing the lines Auto Screenshot Mode needs, how many moves the log has shown, and when its last picture was taken and of what. It never sends the log's lines that way. While the log is followed but has shown no move yet, the bar is yellow, and pointing at it says how to turn on the game's log.</p>
+    <p>The analyzer also shows, at its top, whether Auto Screenshot Mode is running. This page tells it whether the log is followed and the window shared, whether the game is writing the lines Auto Screenshot Mode needs, how many moves the log has shown, when its last picture was taken and of what, and the game's language. It never sends the log's lines that way. While the log is followed but has shown no move yet, the bar is yellow, and pointing at it says how to turn on the game's log.</p>
     <div class="code" data-file="js/auto.js" data-region="receive"></div>
   </section>
 
@@ -510,7 +510,8 @@
     <div class="code" data-file="desktop/main.js" data-region="read-log"></div>
 
     <h3>It shares only the game window, found by its title</h3>
-    <p>A desktop app can see which window is which. Every two seconds the app looks for the window titled Torchlight: Infinite. When this page asks to share a window, the app answers with that window only, with no picker: never a screen, a browser tab or any other window. The checks above still run. A picture is taken only while you've agreed, the log is followed and the shared window is live.</p>
+    <p>A desktop app can see which window is which. Every two seconds the app looks for the window titled Torchlight: Infinite. When this page asks to share a window, the app answers with that window only, with no picker: never a browser tab or any other window. The checks above still run. A picture is taken only while you've agreed, the log is followed and the shared window is live.</p>
+    <p>Sometimes Windows won't share the game window: when the game runs as administrator, say, the share fails with "Could not start video source". Then the overlay asks whether the app may share the screen the game is on instead. Only if you say yes does it share that screen, and every picture is cut to the game window's visible area before anything reads or keeps it, and taken only while the game is the window in front. The overlay stays out of it, as it does from any capture. You can turn it off from the tray menu (Share the game's screen when Windows won't share its window), and turning Auto Screenshot Mode off here clears your answer.</p>
     <div class="code" data-file="desktop/main.js" data-region="game-title"></div>
     <div class="code" data-file="desktop/main.js" data-region="game-window"></div>
     <div class="code" data-file="desktop/main.js" data-region="share-game"></div>
@@ -541,19 +542,19 @@
   <section class="guide-section" id="agree">
     <h2>Turn it on</h2>
     <div class="agree">
-      <label class="toggle"><input type="checkbox" id="agree-box"><span><strong>I've read this page.</strong><small>I agree to let Auto Screenshot Mode read the game log and take pictures of the game window, as described above. In a browser, that's the log I give it and the window I share. In the desktop app, it's the log and the Torchlight: Infinite window it finds, with its record of my last runs kept on this PC.</small></span></label>
+      <label class="toggle"><input type="checkbox" id="agree-box"><span><strong>I've read this page.</strong><small>I agree to let Auto Screenshot Mode read the game log and take pictures of the game window, as described above. In a browser, that's the log I give it and the window I share. In the desktop app, it's the log and the Torchlight: Infinite window it finds (or, only if I allow it when Windows won't share that window, the screen it's on, cut to that window), with its record of my last runs kept on this PC.</small></span></label>
       <div class="agree-actions">
         <button type="button" class="btn btn-primary" id="agree-on" disabled>Turn on Auto Screenshot Mode</button>
         <button type="button" class="btn" id="agree-off" hidden>Turn it off and forget my log</button>
       </div>
       <p class="agree-status" id="agree-status" aria-live="polite"></p>
     </div>
-    <p class="note">This is agreement version <span id="consent-version">4</span>. If what Auto Screenshot Mode does changes, this page asks you to read it again before it turns back on.</p>
+    <p class="note">This is agreement version <span id="consent-version">5</span>. If what Auto Screenshot Mode does changes, this page asks you to read it again before it turns back on.</p>
   </section>
 </main>
 
-<script src="js/capture.js?v=20261017h"></script>
-<script src="js/follow.js?v=20261017h"></script>
+<script src="js/capture.js?v=20261018m"></script>
+<script src="js/follow.js?v=20261018m"></script>
 <script>
 (function () {
   'use strict';
@@ -565,7 +566,7 @@
     ['js/capture.js', 'Follows the log, checks your agreement, and takes pictures of the shared window.'],
     ['js/follow.js', 'This page’s controls: the agreement check, the triggers, and handing each picture to the analyzer tab.'],
     ['js/auto.js', 'The analyzer’s side: the agreement check, and reading each picture it’s handed into the board.'],
-    ['desktop/main.js', 'The desktop app: finds the log, shares only the game window, and keeps the agreement and the record.'],
+    ['desktop/main.js', 'The desktop app: finds the log, shares only the game window (or, if you allow it when Windows won’t, the screen it’s on, cut to the window), and keeps the agreement and the record.'],
     ['desktop/preload.js', 'What this site’s pages get from the desktop app.'],
     ['desktop/lib/follow-adapter.js', 'In the desktop app, on this page: connects the log and the game window, and keeps the agreement.'],
     ['desktop/lib/analyzer-adapter.js', 'In the desktop app, on the analyzer: copies the advice to the overlay, and keeps the record.'],
@@ -593,10 +594,18 @@
   const prefs = load();
   $('consent-version').textContent = VERSION;
 
+  // What each agreement version added, for a player who agreed to an
+  // older one: Auto Screenshot Mode stays off until they agree again.
+  const CHANGES = {
+    5: 'it also notes the game’s language, which the game writes in its log every few minutes (a line with sdkLang=…). Only the two-letter language code is kept, so the analyzer can tell you when names and labels may not be read.',
+  };
   function renderAgreement() {
     const on = prefs.enabled && prefs.consent === VERSION;
     $('agree-off').hidden = !on;
-    $('agree-status').textContent = on ? `Auto Screenshot Mode is on in this browser${prefs.consentAt ? `, since you agreed on ${new Date(prefs.consentAt).toLocaleDateString()}` : ''}.` : '';
+    const older = prefs.enabled && prefs.consent > 0 && prefs.consent < VERSION;
+    const since = older ? Object.keys(CHANGES).filter((v) => v > prefs.consent && v <= VERSION).map((v) => CHANGES[v]) : [];
+    $('agree-status').textContent = on ? `Auto Screenshot Mode is on in this browser${prefs.consentAt ? `, since you agreed on ${new Date(prefs.consentAt).toLocaleDateString()}` : ''}.`
+      : older ? `You agreed to version ${prefs.consent} of this page. Since then, ${since.join(' And ') || 'this page changed'} Auto Screenshot Mode is off until you agree again below.` : '';
   }
   $('agree-box').addEventListener('change', (e) => ($('agree-on').disabled = !e.target.checked));
   $('agree-on').addEventListener('click', () => {

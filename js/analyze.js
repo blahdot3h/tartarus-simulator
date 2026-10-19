@@ -1084,6 +1084,8 @@
     for (const b of $('az-tools').querySelectorAll('[data-tool]')) b.setAttribute('aria-pressed', String(model.tools.includes(b.dataset.tool)));
     $('az-tools-confirm').hidden = !model.toolsToConfirm;
     $('az-tools-confirm-text').textContent = model.toolsToConfirm || '';
+    if (model.toolsToConfirm && model.toolsToConfirm !== toolsAsked) openTools();
+    toolsAsked = model.toolsToConfirm || '';
     // The run's instruments first, in the order they were gained, then the
     // rest; the list scrolls back to the top when its order changes.
     const toolBox = $('az-tools');
@@ -1171,6 +1173,51 @@
       if (list.children[i] !== li) list.insertBefore(li, list.children[i] || null);
     });
     for (const [key, li] of old) if (!keep.has(key)) li.remove();
+  }
+
+  // The instruments in a window over the middle of the board, with a search
+  // by name (the user: the side column's list was too hard to look
+  // through). The list and the confirm prompt move into it while it's open,
+  // keeping their ids and handlers, and go back when it closes.
+  let toolsAsked = '';
+  function openTools() {
+    const d = $('az-tools-dialog');
+    if (d.open) return;
+    $('az-tools-dialog-body').append($('az-tools-confirm'), $('az-tools'));
+    $('az-tools-search').value = '';
+    filterTools('');
+    d.show();
+    placeTools();
+    $('az-tools-search').focus({ preventScroll: true });
+  }
+  function closeTools() {
+    const d = $('az-tools-dialog');
+    if (!d.open) return;
+    filterTools('');
+    d.close();
+    $('az-tools-open').after($('az-tools'));
+    $('az-tools-open').before($('az-tools-confirm'));
+  }
+  // Over the middle of the board, kept on the screen.
+  function placeTools() {
+    const d = $('az-tools-dialog');
+    if (!d.open) return;
+    const r = $('az-board').getBoundingClientRect();
+    const w = d.offsetWidth;
+    const h = d.offsetHeight;
+    const keep = (v, size, room) => Math.max(8, Math.min(room - size - 8, v - size / 2));
+    // The part of the board that's on the screen.
+    const x0 = Math.max(0, r.left);
+    const x1 = Math.min(window.innerWidth, r.right);
+    const y0 = Math.max(0, r.top);
+    const y1 = Math.min(window.innerHeight, r.bottom);
+    d.style.left = `${keep(x1 > x0 ? (x0 + x1) / 2 : window.innerWidth / 2, w, window.innerWidth)}px`;
+    d.style.top = `${keep(y1 > y0 ? (y0 + y1) / 2 : window.innerHeight / 2, h, window.innerHeight)}px`;
+  }
+  function filterTools(q) {
+    const t = String(q || '').trim().toLowerCase();
+    for (const b of $('az-tools').querySelectorAll('[data-tool]')) b.hidden = !!t && !T.toolName(b.dataset.tool).toLowerCase().includes(t);
+    $('az-tools-rest').hidden = !!t || !model.tools.some((id) => T.TOOLS[id]);
   }
 
   const actionKey = (a) => [a.type, a.cell, a.to, a.id, a.accept, a.choice].join('|');
@@ -2733,6 +2780,12 @@
       m.startEvent = r.badge.id;
       notes.push(`Start of run: ${T.START_EVENTS[r.badge.id].name}, from its badge under the instruments.`);
     }
+    // A badge that looks like more than one card (Tyranny and Cage Fight):
+    // not guessed; the player sets it.
+    if (r.badge && r.badge.alike && T.START_EVENTS && (!m.startEvent || m.startEvent === 'none')) {
+      const names = r.badge.alike.filter((id) => T.START_EVENTS[id]).map((id) => T.START_EVENTS[id].name);
+      if (names.length) notes.push(`The run's start card looks like ${names.join(' or ')} from its badge, which look alike: set it under Start of run.`);
+    }
     // King of the Caged is met once a Supreme or Chromatic shows. Prison
     // Walk's tiles aren't read, so they keep what was set.
     if (m.objective === 'king') m.milestone = highest >= T.SUPREME || chromatic > 0;
@@ -3110,6 +3163,23 @@
       model.chainArmed = e.target.checked;
       changed();
     });
+    $('az-tools-open').addEventListener('click', () => openTools());
+    $('az-tools-close').addEventListener('click', () => closeTools());
+    $('az-tools-dialog').addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeTools();
+      }
+    });
+    $('az-tools-search').addEventListener('input', (e) => filterTools(e.target.value));
+    // Enter picks the one instrument left by the search.
+    $('az-tools-search').addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const left = [...$('az-tools').querySelectorAll('[data-tool]')].filter((b) => !b.hidden);
+      if (left.length === 1) left[0].click();
+    });
+    window.addEventListener('resize', () => placeTools());
     $('az-tools').addEventListener('click', (e) => {
       const b = e.target.closest('[data-tool]');
       if (!b) return;
@@ -3121,6 +3191,7 @@
     // The player confirms the run's instruments as set: they're locked in,
     // and the advice is checked again with them.
     $('az-tools-ok').addEventListener('click', () => {
+      closeTools();
       model.toolsToConfirm = '';
       model.toolsLocked = true;
       // The panel's count now: only more than this asks again.

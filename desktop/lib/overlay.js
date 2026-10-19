@@ -98,7 +98,7 @@
     $('fold').textContent = sh.collapsed ? '+' : '–';
     $('fold').title = sh.collapsed ? 'Unfold it' : 'Fold it to a thin bar';
     $('day').textContent = sh.collapsed ? oneLine()
-      : a && a.riot !== null && a.riot !== undefined ? `${a.riot} ${a.riot === 1 ? 'day' : 'days'} until Riot${a.step ? ` · ${a.step}` : ''}` : sh.local ? 'local site' : '';
+      : a && a.riot !== null && a.riot !== undefined ? `${a.riot} ${a.riot === 1 ? 'day' : 'days'} until Riot${a.step ? ` · ${a.step}` : ''}${a.contract ? ` · ${a.contract}` : ''}` : sh.local ? 'local site' : '';
 
     const out = [];
     if (sh.appUpdate) out.push(line('info', `App update ${sh.appUpdate} is ready.`, button('Restart', 'restart')));

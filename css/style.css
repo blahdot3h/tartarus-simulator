@@ -4545,3 +4545,76 @@ textarea {
 .az-treasure-wait p {
   max-width: 70ch;
 }
+
+/* The instruments in a window over the middle of the board, with a search
+   by name (placed by placeTools in js/analyze.js). */
+.az-tools-open {
+  width: 100%;
+  margin-bottom: 6px;
+}
+
+.az-tools-dialog {
+  position: fixed;
+  inset: auto;
+  z-index: 60;
+  width: min(780px, calc(100vw - 16px));
+  max-height: min(80vh, 760px);
+  margin: 0;
+  padding: 12px 14px 14px;
+  border: 1px solid var(--teal);
+  border-radius: var(--radius);
+  background: var(--slab);
+  color: var(--chalk);
+  box-shadow: 0 18px 60px rgb(0 0 0 / 0.6);
+}
+
+.az-tools-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.az-tools-dialog-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.az-tools-dialog-head .az-game-h {
+  margin: 0;
+}
+
+.az-tools-search {
+  flex: 1;
+  min-width: 160px;
+  padding: 6px 10px;
+  border: 1px solid var(--iron-hi);
+  border-radius: var(--radius);
+  background: var(--court);
+  color: var(--chalk);
+  font: inherit;
+}
+
+.az-tools-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.az-tools-dialog .az-instruments {
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+}
+
+.az-tools-dialog .az-instrument .instrument {
+  width: 44px;
+  height: 44px;
+}
+
+.az-instrument[hidden] {
+  display: none;
+}

@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600;700&family=Big+Shoulders+Stencil+Display:wght@600;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="css/style.css?v=20261018m">
+<link rel="stylesheet" href="css/style.css?v=20261018p">
 </head>
 <body>
 <main class="analyzer" id="analyzer">
@@ -115,7 +115,16 @@
           <section class="az-instruments-panel" aria-labelledby="az-instruments-title">
             <h3 class="az-game-h" id="az-instruments-title">Torture Instrument</h3>
             <div class="az-tools-confirm" id="az-tools-confirm" role="alert" hidden><p id="az-tools-confirm-text"></p><button type="button" class="btn btn-primary" id="az-tools-ok">These are right</button></div>
+            <button type="button" class="btn az-tools-open" id="az-tools-open">Choose instruments…</button>
             <div class="az-instruments" id="az-tools"></div>
+            <dialog class="az-tools-dialog" id="az-tools-dialog" aria-labelledby="az-tools-dialog-title">
+              <div class="az-tools-dialog-head">
+                <h3 class="az-game-h" id="az-tools-dialog-title">Your instruments</h3>
+                <input type="search" class="az-tools-search" id="az-tools-search" placeholder="Search by name" autocomplete="off" aria-label="Search the instruments by name">
+                <button type="button" class="btn btn-primary" id="az-tools-close">Done</button>
+              </div>
+              <div class="az-tools-dialog-body" id="az-tools-dialog-body"></div>
+            </dialog>
             <button type="button" class="az-report-link" data-report="tool"><span aria-hidden="true">+</span> Instrument not here? Report it</button>
           </section>
         </div>
@@ -329,15 +338,15 @@
   </footer>
 </main>
 
-<script src="js/engine.js?v=20261018m"></script>
-<script src="js/board.js?v=20261018m"></script>
-<script src="js/tool-combos.js?v=20261018m"></script>
-<script src="js/solver.js?v=20261018m"></script>
-<script src="js/live.js?v=20261018m"></script>
-<script src="js/report.js?v=20261018m"></script>
-<script src="js/capture.js?v=20261018m"></script>
-<script src="js/analyze.js?v=20261018m"></script>
-<script src="js/auto.js?v=20261018m"></script>
-<script src="js/update.js?v=20261018m"></script>
+<script src="js/engine.js?v=20261018p"></script>
+<script src="js/board.js?v=20261018p"></script>
+<script src="js/tool-combos.js?v=20261018p"></script>
+<script src="js/solver.js?v=20261018p"></script>
+<script src="js/live.js?v=20261018p"></script>
+<script src="js/report.js?v=20261018p"></script>
+<script src="js/capture.js?v=20261018p"></script>
+<script src="js/analyze.js?v=20261018p"></script>
+<script src="js/auto.js?v=20261018p"></script>
+<script src="js/update.js?v=20261018p"></script>
 </body>
 </html>

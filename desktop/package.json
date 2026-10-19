@@ -1,7 +1,7 @@
 {
   "name": "tartarus-overlay",
   "productName": "Tartarus Overlay",
-  "version": "0.2.18",
+  "version": "0.2.19",
   "description": "Auto Screenshot Mode for the Tartarus board analyzer, with the advice in an overlay over the game.",
   "author": "CoffeeBns",
   "license": "UNLICENSED",

@@ -142,6 +142,8 @@
       // The office shows one card only (read from a screenshot): 'bestow' or
       // 'instigate'.
       officeOnly: null,
+      // The meals the game framed on a meal pick (only those can be eaten).
+      mealOnly: null,
       eventKind: 'chain',
       // rerolls: a pet's re-rolls left on an instrument offer. picks: the
       // Warden's Treasure picks waiting, this one included (3 a Treasure
@@ -273,7 +275,7 @@
     st.phase = 'manage';
 
     const usedToday = () => {
-      st.used = { swap: m.swapUsed ? 1 : 0, devour: m.devourUsed ? 1 : 0, devourAfterSwap: !!m.consumeOffered, noSwap: !!m.noSwap, noDevour: !!m.noDevour, noHunt: !!m.noHunt, huntOnly: Array.isArray(m.huntOnly) ? m.huntOnly.slice() : null, officeOnly: m.officeOnly || null };
+      st.used = { swap: m.swapUsed ? 1 : 0, devour: m.devourUsed ? 1 : 0, devourAfterSwap: !!m.consumeOffered, noSwap: !!m.noSwap, noDevour: !!m.noDevour, noHunt: !!m.noHunt, huntOnly: Array.isArray(m.huntOnly) ? m.huntOnly.slice() : null, officeOnly: m.officeOnly || null, mealOnly: Array.isArray(m.mealOnly) ? m.mealOnly.slice() : null };
     };
     switch (m.step) {
       case 'patrol': {
@@ -410,6 +412,7 @@
     m.noHunt = !!st.used.noHunt;
     m.huntOnly = Array.isArray(st.used.huntOnly) ? st.used.huntOnly.slice() : null;
     m.officeOnly = st.phase === 'office' && st.used.officeOnly ? st.used.officeOnly : null;
+    m.mealOnly = Array.isArray(st.used.mealOnly) ? st.used.mealOnly.slice() : null;
     m.ended = st.phase === 'ended';
     return m;
   }
@@ -2502,6 +2505,9 @@
     }
     m.dest = [];
     m.chainArmed = false;
+    // Only the meals the game framed can be eaten now (report 385: the
+    // board before held a meal the game didn't offer, and it was advised).
+    m.mealOnly = r.chain.targets.slice();
     const tools = (m.tools || []).map((id) => ({ id, sim: id, name: T.toolName(id), conf: 1 }));
     return { model: m, checks, notes, chromatic: (m.vault || []).length, tools, unsim: [], chain: r.chain.targets };
   }
@@ -2673,6 +2679,7 @@
     m.noHunt = false;
     m.huntOnly = null;
     m.officeOnly = null;
+    m.mealOnly = null;
     // Without the cards (a picture taken as they come up), a board of the
     // same day with the warden in the same cell keeps what the board
     // before knew. And if the warden's inmate has changed since, today's

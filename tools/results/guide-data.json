@@ -1,5 +1,5 @@
 {
-  "generated": "2026-10-18",
+  "generated": "2026-10-20",
   "headlineRuns": 2000,
   "seed": "GUIDE",
   "toolBase": 1.8535,
@@ -35,16 +35,16 @@
       "delta": 1.196
     },
     {
+      "id": "maiden",
+      "name": "Severed Iron Maiden",
+      "value": 2.964,
+      "delta": 1.1105
+    },
+    {
       "id": "coin",
       "name": "Kin's Coin of Fate",
       "value": 2.772,
       "delta": 0.9185
-    },
-    {
-      "id": "maiden",
-      "name": "Severed Iron Maiden",
-      "value": 2.7345,
-      "delta": 0.881
     },
     {
       "id": "shackles",
@@ -55,8 +55,8 @@
     {
       "id": "scapegoat",
       "name": "Scapegoat's Guillotine",
-      "value": 2.689,
-      "delta": 0.8355
+      "value": 2.6145,
+      "delta": 0.761
     },
     {
       "id": "revenge",
@@ -194,213 +194,207 @@
   "gifts": [
     {
       "id": "scored",
-      "value": 4.6625
+      "value": 4.0345
     },
     {
       "id": "wine",
       "name": "Crimson Vintage",
-      "value": 4.47
-    },
-    {
-      "id": "ring",
-      "name": "Three-Headed Thumb Ring",
-      "value": 4.197
+      "value": 4.0055
     },
     {
       "id": "horn",
       "name": "Brass Horn of Strife",
-      "value": 3.928
+      "value": 3.58
+    },
+    {
+      "id": "ring",
+      "name": "Three-Headed Thumb Ring",
+      "value": 3.5455
     },
     {
       "id": "brand",
       "name": "Brand of Original Sin",
-      "value": 3.868
+      "value": 3.4145
     }
   ],
   "headline": {
     "games": 2000,
-    "rainbowsPerRun": 4.6625,
-    "ci95": 0.0972,
-    "runsWithRainbow": 0.992,
+    "rainbowsPerRun": 4.0345,
+    "ci95": 0.0894,
+    "runsWithRainbow": 0.9915,
     "rainbowCounts": [
-      0.008,
-      0.044,
-      0.1065,
-      0.165,
-      0.2,
-      0.4765
+      0.0085,
+      0.06,
+      0.155,
+      0.2255,
+      0.215,
+      0.336
     ],
-    "devoursPerRun": 6.23,
-    "bitesPerDevour": 1.398,
-    "chainStopsPerRun": 0.018,
+    "devoursPerRun": 5.55,
+    "bitesPerDevour": 1.449,
+    "chainStopsPerRun": 0.006,
     "chainLengths": [
-      0.6904,
-      0.2376,
-      0.0579,
-      0.0122,
-      0.0019,
+      0.6653,
+      0.244,
+      0.07,
+      0.0175,
+      0.0032,
       0
     ],
     "rainbowSources": {
-      "chain": 1900,
-      "singleDevour": 2549,
-      "other": 4876
+      "chain": 1634,
+      "singleDevour": 1571,
+      "other": 4864
     },
-    "firstRainbowDay": 8.44,
-    "swapsPerRun": 8.21,
-    "executionsPerRun": 0.06,
-    "doorsPerRun": 23.23
+    "firstRainbowDay": 8.69,
+    "swapsPerRun": 8.74,
+    "executionsPerRun": 0.063,
+    "doorsPerRun": 22.71
   },
   "stairs": [
     {
       "key": "3:1",
-      "n": 1348,
-      "rainbow": 0.5059,
-      "bites": 1.352
+      "n": 1525,
+      "rainbow": 0.4203,
+      "bites": 1.366
     },
     {
       "key": "4:",
-      "n": 1188,
+      "n": 1203,
       "rainbow": 1,
       "bites": 1
     },
     {
       "key": "3:0",
-      "n": 988,
-      "rainbow": 0.2389,
-      "bites": 1.027
+      "n": 898,
+      "rainbow": 0.1403,
+      "bites": 1.042
     },
     {
       "key": "2:11",
-      "n": 517,
-      "rainbow": 0.3868,
-      "bites": 1.482
+      "n": 510,
+      "rainbow": 0.2373,
+      "bites": 1.533
     },
     {
       "key": "1:111",
-      "n": 441,
-      "rainbow": 0.2857,
-      "bites": 1.578
-    },
-    {
-      "key": "1:110",
-      "n": 406,
-      "rainbow": 0.1404,
-      "bites": 1.414
+      "n": 381,
+      "rainbow": 0.1391,
+      "bites": 1.598
     },
     {
       "key": "2:10",
-      "n": 378,
-      "rainbow": 0.2989,
-      "bites": 1.357
+      "n": 356,
+      "rainbow": 0.1713,
+      "bites": 1.396
     },
     {
-      "key": "1:011",
-      "n": 292,
-      "rainbow": 0.2123,
-      "bites": 1.202
-    },
-    {
-      "key": "1:010",
-      "n": 282,
-      "rainbow": 0.1028,
-      "bites": 1.092
+      "key": "1:110",
+      "n": 349,
+      "rainbow": 0.0774,
+      "bites": 1.513
     },
     {
       "key": "3:2",
-      "n": 261,
-      "rainbow": 0.6705,
-      "bites": 1.521
+      "n": 297,
+      "rainbow": 0.6296,
+      "bites": 1.609
     },
     {
       "key": "2:21",
-      "n": 253,
-      "rainbow": 0.4032,
-      "bites": 1.708
+      "n": 275,
+      "rainbow": 0.3745,
+      "bites": 1.891
     },
     {
-      "key": "1:101",
-      "n": 246,
-      "rainbow": 0.2358,
-      "bites": 1.435
+      "key": "1:010",
+      "n": 211,
+      "rainbow": 0.0616,
+      "bites": 1.095
     },
     {
       "key": "2:20",
-      "n": 215,
-      "rainbow": 0.2558,
-      "bites": 1.591
+      "n": 208,
+      "rainbow": 0.1587,
+      "bites": 1.659
     },
     {
-      "key": "1:100",
-      "n": 214,
-      "rainbow": 0.0841,
-      "bites": 1.36
+      "key": "1:011",
+      "n": 199,
+      "rainbow": 0.0854,
+      "bites": 1.151
+    },
+    {
+      "key": "1:101",
+      "n": 187,
+      "rainbow": 0.0695,
+      "bites": 1.428
     },
     {
       "key": "1:000",
-      "n": 207,
-      "rainbow": 0.0048,
-      "bites": 1.029
+      "n": 160,
+      "rainbow": 0.0063,
+      "bites": 1.031
     },
     {
-      "key": "1:001",
-      "n": 182,
-      "rainbow": 0.2582,
-      "bites": 1.159
-    },
-    {
-      "key": "1:120",
-      "n": 182,
-      "rainbow": 0.2363,
-      "bites": 1.511
+      "key": "1:100",
+      "n": 154,
+      "rainbow": 0.0455,
+      "bites": 1.364
     },
     {
       "key": "2:00",
-      "n": 178,
-      "rainbow": 0.2416,
-      "bites": 1.084
-    },
-    {
-      "key": "1:121",
-      "n": 169,
-      "rainbow": 0.3491,
-      "bites": 1.621
+      "n": 153,
+      "rainbow": 0.1373,
+      "bites": 1.059
     },
     {
       "key": "2:01",
-      "n": 167,
-      "rainbow": 0.2695,
-      "bites": 1.06
+      "n": 150,
+      "rainbow": 0.14,
+      "bites": 1.073
     },
     {
-      "key": "0:1111",
-      "n": 161,
-      "rainbow": 0.2484,
-      "bites": 1.596
+      "key": "1:121",
+      "n": 150,
+      "rainbow": 0.1533,
+      "bites": 1.727
     },
     {
-      "key": "1:211",
-      "n": 141,
-      "rainbow": 0.2553,
-      "bites": 1.858
+      "key": "1:001",
+      "n": 145,
+      "rainbow": 0.1103,
+      "bites": 1.131
     },
     {
       "key": "1:210",
-      "n": 138,
-      "rainbow": 0.1667,
-      "bites": 1.783
+      "n": 140,
+      "rainbow": 0.1071,
+      "bites": 1.936
+    },
+    {
+      "key": "1:211",
+      "n": 137,
+      "rainbow": 0.1971,
+      "bites": 2.036
+    },
+    {
+      "key": "1:120",
+      "n": 135,
+      "rainbow": 0.0963,
+      "bites": 1.667
+    },
+    {
+      "key": "0:1111",
+      "n": 109,
+      "rainbow": 0.055,
+      "bites": 1.459
     },
     {
       "key": "0:1110",
-      "n": 125,
-      "rainbow": 0.16,
-      "bites": 1.72
-    },
-    {
-      "key": "1:020",
-      "n": 114,
-      "rainbow": 0.1754,
-      "bites": 1.079
+      "n": 107,
+      "rainbow": 0.0935,
+      "bites": 1.757
     }
   ],
   "compare": {
@@ -511,105 +505,105 @@
     "rewards": {
       "random": {
         "games": 100000,
-        "rainbowsPerRun": 0.3064,
-        "ci95": 0.0042,
-        "runsWithRainbow": 0.2191,
+        "rainbowsPerRun": 0.2527,
+        "ci95": 0.0036,
+        "runsWithRainbow": 0.195,
         "rainbowCounts": [
-          0.7809,
-          0.156,
-          0.0453,
-          0.0131,
-          0.0037,
-          0.0011
+          0.805,
+          0.1494,
+          0.0359,
+          0.008,
+          0.0014,
+          0.0004
         ],
-        "devoursPerRun": 2.63,
-        "bitesPerDevour": 1.421,
+        "devoursPerRun": 2.6,
+        "bitesPerDevour": 1.432,
         "chainStopsPerRun": 0,
         "chainLengths": [
-          0.6816,
-          0.2352,
-          0.0661,
-          0.0149,
-          0.0022,
+          0.6776,
+          0.2344,
+          0.0688,
+          0.0168,
+          0.0024,
           0
         ],
         "rainbowSources": {
-          "chain": 13324,
-          "singleDevour": 8654,
-          "other": 8658
+          "chain": 10190,
+          "singleDevour": 5511,
+          "other": 9566
         },
-        "firstRainbowDay": 11.61,
-        "swapsPerRun": 2.7,
-        "executionsPerRun": 0.046,
-        "doorsPerRun": 10.86
+        "firstRainbowDay": 11.99,
+        "swapsPerRun": 2.72,
+        "executionsPerRun": 0.047,
+        "doorsPerRun": 10.9
       },
       "simple": {
         "games": 100000,
-        "rainbowsPerRun": 1.7001,
-        "ci95": 0.0087,
-        "runsWithRainbow": 0.8093,
+        "rainbowsPerRun": 1.4761,
+        "ci95": 0.0074,
+        "runsWithRainbow": 0.7915,
         "rainbowCounts": [
-          0.1907,
-          0.3285,
-          0.2462,
-          0.1309,
-          0.0597,
-          0.044
+          0.2085,
+          0.3629,
+          0.2579,
+          0.1125,
+          0.0401,
+          0.0182
         ],
-        "devoursPerRun": 8.69,
-        "bitesPerDevour": 1.466,
+        "devoursPerRun": 8.52,
+        "bitesPerDevour": 1.478,
         "chainStopsPerRun": 0,
         "chainLengths": [
-          0.6556,
-          0.2472,
-          0.0758,
-          0.0187,
-          0.0027,
+          0.6532,
+          0.2437,
+          0.0788,
+          0.0212,
+          0.0032,
           0
         ],
         "rainbowSources": {
-          "chain": 80848,
-          "singleDevour": 60200,
-          "other": 28963
+          "chain": 67288,
+          "singleDevour": 46797,
+          "other": 33528
         },
-        "firstRainbowDay": 12.18,
-        "swapsPerRun": 4.09,
-        "executionsPerRun": 0.168,
-        "doorsPerRun": 23.5
+        "firstRainbowDay": 12.63,
+        "swapsPerRun": 4.16,
+        "executionsPerRun": 0.172,
+        "doorsPerRun": 23.32
       },
       "tuned": {
         "games": 2000,
-        "rainbowsPerRun": 4.6625,
-        "ci95": 0.0972,
-        "runsWithRainbow": 0.992,
+        "rainbowsPerRun": 4.0345,
+        "ci95": 0.0894,
+        "runsWithRainbow": 0.9915,
         "rainbowCounts": [
-          0.008,
-          0.044,
-          0.1065,
-          0.165,
-          0.2,
-          0.4765
+          0.0085,
+          0.06,
+          0.155,
+          0.2255,
+          0.215,
+          0.336
         ],
-        "devoursPerRun": 6.23,
-        "bitesPerDevour": 1.398,
-        "chainStopsPerRun": 0.018,
+        "devoursPerRun": 5.55,
+        "bitesPerDevour": 1.449,
+        "chainStopsPerRun": 0.006,
         "chainLengths": [
-          0.6904,
-          0.2376,
-          0.0579,
-          0.0122,
-          0.0019,
+          0.6653,
+          0.244,
+          0.07,
+          0.0175,
+          0.0032,
           0
         ],
         "rainbowSources": {
-          "chain": 1900,
-          "singleDevour": 2549,
-          "other": 4876
+          "chain": 1634,
+          "singleDevour": 1571,
+          "other": 4864
         },
-        "firstRainbowDay": 8.44,
-        "swapsPerRun": 8.21,
-        "executionsPerRun": 0.06,
-        "doorsPerRun": 23.23
+        "firstRainbowDay": 8.69,
+        "swapsPerRun": 8.74,
+        "executionsPerRun": 0.063,
+        "doorsPerRun": 22.71
       }
     }
   },
@@ -822,8 +816,8 @@
         "crown",
         "rope",
         "claws",
-        "coin",
         "maiden",
+        "coin",
         "shackles",
         "scapegoat",
         "revenge",
@@ -892,8 +886,8 @@
         "crown",
         "rope",
         "claws",
-        "coin",
         "maiden",
+        "coin",
         "shackles",
         "scapegoat",
         "revenge",
@@ -926,5 +920,5 @@
     }
   },
   "totalRuns": 602000,
-  "minutes": 5.3
+  "minutes": 4.8
 }

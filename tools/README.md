@@ -49,7 +49,7 @@ The strategy has two tuned profiles, chosen by the run's settings: drills with r
 node tools/strategy-sim.js guide --no-tune --games 2000 --side 2000 --habit-games 2000 --compare 100000
 ```
 
-For ±0.01, use 100,000 runs a measurement (`--games 100000 --side 100000 --habit-games 100000 --compare 100000`). The latest run (2026-10-18, with every Usurpation placing the next on a free cell and the Muzzle counting the block before its consume) took 602,000 runs in 5.3 minutes on 1 thread, most of them the strategy comparison's 100,000 runs a player. Its full numbers are in `results/guide-data.json`.
+For ±0.01, use 100,000 runs a measurement (`--games 100000 --side 100000 --habit-games 100000 --compare 100000`). The latest run (2026-10-19, with the measured instrument offer odds) took 602,000 runs in 4.6 minutes on 1 thread, most of them the strategy comparison's 100,000 runs a player. Its full numbers are in `results/guide-data.json`.
 
 ## The contract challenge (removed)
 
@@ -58,6 +58,28 @@ The Chinese sim's 12-day contract challenge (contracts, vouchers, escorts and co
 ## Results
 
 The Chinese sim's two-meal food chain (Mammoth also eats Wolf, Lion also eats Rat) was confirmed not to be in the live game on 2026-10-15, so it was removed from the simulator and the lab. The older sections below still show the two-meal numbers measured at the time; their files are in the git history.
+
+### The Severed Iron Maiden as its card reads (2026-10-20)
+
+The user's game of 2026-10-20 held the Maiden and the Scapegoat's Guillotine. The advice kept replacing a Normal beside 2 other inmates, the Scapegoat removed both, and the run ended with almost nothing. The simulator had given the Maiden's +3 to a newcomer left alone after the Scapegoat's removals, so every such Replace looked like a sure Supreme or better. The game gave no +3.
+
+The card (report 9) reads "The quantities of this Inmate's Higher-Tier Inmates and Lower-Tier Inmates are equal ... +3 additional Rarity Tiers to the inmate this Replacement". As written, the inmate **replaced** must stand level (as many inmates above its rarity as below it, on the block as it is before the Replace, before the Scapegoat removes any), and the newcomer gains +3.
+- **Evidence:** all 20 Replaces in the user's recorded runs with the Maiden fit it, 3 of them with a +3. The old reading (the newcomer's standing after the removals) missed 3: the two Scapegoat Replaces of that game, and a plain Replace of a Normal beside a Normal, 2 Rares and a Supreme, whose Rare newcomer got no +3.
+- **Engine and strategy:** the Replace checks the replaced inmate first, and the strategy's Maiden bonus is that same check. The Scapegoat's expected loss now averages the other inmates only (counting the one replaced understated it beside a Normal). On the user's boards of days 8, 10 and 12 the advice is now to end the day.
+- **Measured again** (the 61 pair-lab sets with either instrument, then the guide, on 1 thread): the Maiden alone 2.92 in the pair lab (was 2.72) and 2.96 in the guide; the Scapegoat alone 2.57 (was 2.63). Maiden with the Scapegoat 4.98 (was 6.09), with the Burning Stake 3.81 (was 4.16), with the Noose 8.93 (was 9.12). The headline is unchanged (4.03). The drill ranking puts the Maiden 6th, ahead of Kin's Coin.
+
+### Instrument offers by the game's odds (2026-10-19)
+
+The user asked whether every instrument is as likely in an offer: the best ones "feel special". They aren't all equal. In 8,891 three-card offers that 2,746 players' analyzers read (2026-10-17 to 19, from analyzer versions that knew all 31 instruments), the 8 instruments named for a beast were 3.9% of the cards, against 25.8% at equal odds. Those are the Blood-Stained Trap and the Iron Crown (Berserk Lion), the Elephant-Foot Maul and the Iron Tongs (Mammoth), the Filthy Claws and the Fanged Guillotine (Alpha Wolf), and the Skewered Rat Heads and the Squirming Iron Box (Colossal Rat).
+- **Each beast instrument is about 0.12 as likely as any other** (95%: 0.11 to 0.125). The other 23, the Hangman's Noose included, come up alike.
+- **It isn't a reading artifact:** the rate is the same for a run's first offer and for later ones, and in every analyzer version, and offers with a card left unread are only 10 of 8,901. The user's own 65 recorded offers agree (5.6%).
+- **The engine** now draws an offer's cards by these odds (`params.beastToolOdds`, 12, in % of another's odds; in the Lab), at a run's start, for an objective and on a pet's re-roll.
+- **The re-roll advice** weighs a new offer by the same odds. Equal odds overrated re-rolls: Kin's Coin with the Ring of Keys and the Branding Iron was re-rolled for an average best of +1.09 Rainbows a run against +0.96, where the measured odds give +0.85, so the Coin is kept now.
+
+The guide was measured again with the same settings (602,000 runs in 4.6 minutes on 1 thread). Only what depends on offers moved:
+- **Headline:** **4.03** Rainbows a run with rewards on (±0.09, was 4.66), since the best instruments come along less often. Played simply 1.49 (was 1.70), random 0.25 (was 0.31). With no instruments, nothing changed (1.80).
+- **Warden's Treasure:** Crimson Vintage 3.96, Horn 3.59, Thumb Ring 3.54 and Brand 3.44, against 4.03 judged on the spot. The Horn and the Ring swapped places inside the margin.
+- **Instruments held from day 1, the pairs and the drill ranking** play without offers, so they're unchanged.
 
 ### Usurpations in a row, and the Muzzle before its consume (2026-10-18)
 

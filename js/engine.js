@@ -97,6 +97,8 @@
     nestTier: 2,
     rewards: true,
     startTools: 1,
+    // An instrument named for a beast in an offer, as a % of another's odds.
+    beastToolOdds: 12,
   };
 
   // Field definitions for the Lab form; normalizeParams clamps to these.
@@ -127,6 +129,7 @@
     { key: 'nestTier', group: 'Markers', label: 'Rarity of a hatched Rat', type: 'tier' },
     { key: 'rewards', group: 'Rewards', label: "Meeting the run's objective earns a tool; each Rainbow opens the Warden's Treasure", type: 'bool' },
     { key: 'startTools', group: 'Rewards', label: 'Starting instrument picks, each from 3 random ones (the live game gives 1)', type: 'int', min: 0, max: 5 },
+    { key: 'beastToolOdds', group: 'Rewards', label: "Odds of an instrument named for a beast (Berserk Lion, Mammoth, Alpha Wolf, Colossal Rat) in an offer, as % of another's (the live game: about 12)", type: 'int', min: 0, max: 100 },
   ];
 
   // Names exactly as the game prints them: the analyzer reads an instrument
@@ -171,7 +174,7 @@
     // are equal. Effect: +3 additional Rarity Tiers to the inmate this
     // Replacement" (spelled "Servered"). Read as the inmate a swap (the
     // game's Replace) brings in, counted against the rest of the block.
-    maiden: { name: 'Severed Iron Maiden', text: 'After a Replace, if as many inmates on the block are above the new inmate’s rarity as below it, it gains +3 tiers.' },
+    maiden: { name: 'Severed Iron Maiden', text: 'A Replace of an inmate with as many inmates on the block above its rarity as below it brings the new inmate in +3 tiers.' },
     // From a player's report (#11, 2026-10-16), the instrument pick: "-1 daily
     // destination option; there is a 35% chance to trigger after Consuming",
     // and "+1 additional Rarity Tier" (the rest of the card was cut off),
@@ -226,6 +229,25 @@
     trap: { name: 'Blood-Stained Trap: Berserk Lion', text: "With the warden on a Lion's cell, Hunt joins the day's choices: the Lion puts a Prey mark on one inmate it can consume, and each morning both rise a tier, for 3 mornings. A day has a Consume, a Replace or a Hunt." },
   };
   const TOOL_IDS = Object.keys(TOOLS);
+
+  // The instruments named for a beast (": Berserk Lion", ": Mammoth", ": Alpha
+  // Wolf", ": Colossal Rat") are rare in the game's offers. In 8,891 offers
+  // that players' analyzers read (2026-10-17 to 19), they were 3.9% of the
+  // cards against 25.8% at equal odds: each about 0.12 as likely as any
+  // other (params.beastToolOdds, in %). The user's own offers agreed.
+  const BEAST_TOOLS = ['trap', 'crown', 'maul', 'tongs', 'claws', 'guillotine', 'skewer', 'ironbox'];
+  const toolWeight = (state, id) => {
+    if (!BEAST_TOOLS.includes(id)) return 1;
+    const odds = state && state.params && Number.isFinite(state.params.beastToolOdds) ? state.params.beastToolOdds : DEFAULT_PARAMS.beastToolOdds;
+    return Math.max(0, odds) / 100;
+  };
+  // An offer's cards: k different instruments from the pool, each by its odds.
+  function drawTools(stream, state, pool, k) {
+    const left = pool.slice();
+    const out = [];
+    while (out.length < k && left.length) out.push(left.splice(pickIndex(stream, left.map((id) => toolWeight(state, id))), 1)[0]);
+    return out;
+  }
 
   // Special events behind sealed doors, each equally likely.
   const EVENTS = {
@@ -563,10 +585,15 @@
   }
   const canHuntNow = (state) => state.phase === 'manage' && !state.chaining && state.used.devour < 1 && state.used.swap < 1 && !state.used.hunt && !state.used.noHunt && huntTargets(state).length > 0;
 
+  // used.mealOnly: the meals the game framed on the meal pick now open
+  // (the analyzer reads them, report 385). A bite clears it: the next pick
+  // frames its own.
+  const framedMeals = (state, options) => (state.used && Array.isArray(state.used.mealOnly) ? options.filter((o) => state.used.mealOnly.includes(o.cell)) : options);
+
   function startOptions(state) {
     const cell = state.cells[state.position];
     if (!canDevourNow(state) || state.phase !== 'manage' || !cell || cell.sealed || !cell.inmate) return [];
-    return devourOptions(state, cell.n);
+    return framedMeals(state, devourOptions(state, cell.n));
   }
 
   function limits(state) {
@@ -629,7 +656,7 @@
   function meetObjective(state, why) {
     state.milestone = true;
     const name = OBJECTIVES[state.objective.id].name;
-    const options = state.params.rewards ? shuffle(state, TOOL_IDS.filter((t) => !has(state, t))).slice(0, 3) : [];
+    const options = state.params.rewards ? drawTools(state, state, TOOL_IDS.filter((t) => !has(state, t)), 3) : [];
     if (options.length) state.pending.push({ kind: 'tool', options });
     log(state, 'tool', `Objective met, ${name}: ${why}.${options.length ? ' Choose a tool.' : ''}`, { type: 'objective', id: state.objective.id });
   }
@@ -897,8 +924,13 @@
   function offerStartTools(state) {
     const picks = Math.min(state.params.startTools, Math.floor(TOOL_IDS.length / 3));
     if (picks <= 0) return;
-    const order = shuffle(sideStream(state, 'start-tools'), TOOL_IDS.filter((t) => !has(state, t)));
-    for (let i = 0; i < picks; i++) state.pending.push({ kind: 'tool', options: order.slice(3 * i, 3 * i + 3), start: true });
+    const stream = sideStream(state, 'start-tools');
+    let pool = TOOL_IDS.filter((t) => !has(state, t));
+    for (let i = 0; i < picks; i++) {
+      const options = drawTools(stream, state, pool, 3);
+      pool = pool.filter((t) => !options.includes(t));
+      state.pending.push({ kind: 'tool', options, start: true });
+    }
     log(state, 'tool', picks === 1 ? 'Choose a starting instrument.' : `Choose ${picks} starting instruments, one at a time.`);
   }
 
@@ -1539,10 +1571,11 @@
     if (state.used.swap > 0 && !state.used.devourAfterSwap) return fail('You replaced an inmate today, and a day has a Replace or a consume, not both. End the day.');
     if (!canDevourNow(state)) return fail('Today’s consume is used. End the day for another.');
     if (from !== state.position) return fail(`Only the inmate in the warden's cell (${cellLabel(state.position)}) can start a consume.`);
-    const option = devourOptions(state, from).find((o) => o.cell === to);
+    const option = framedMeals(state, devourOptions(state, from)).find((o) => o.cell === to);
     if (!option) return fail('That inmate cannot consume that target.');
     const events = [];
     state.used.devour += 1;
+    state.used.mealOnly = null;
     state.chaining = { eater: state.cells[from].inmate.id, at: state.log.length, bites: [] };
     state.chaining.bites.push(doDevour(state, from, option, events));
     goOnChain(state, events);
@@ -1552,7 +1585,7 @@
   // The eater's meals while its chain waits for a pick.
   function chainOptions(state) {
     const cell = state.chaining ? boardCellOf(state, state.chaining.eater) : null;
-    return cell ? devourOptions(state, cell.n) : [];
+    return cell ? framedMeals(state, devourOptions(state, cell.n)) : [];
   }
 
   // After each bite the chain goes on while the eater has a meal. Each bite
@@ -1581,9 +1614,10 @@
     if (!state.chaining) return fail('No consume chain is waiting for a meal.');
     if (state.pending.length) return fail('Make your pending choice first.');
     const cell = boardCellOf(state, state.chaining.eater);
-    const option = cell ? devourOptions(state, cell.n).find((o) => o.cell === to) : null;
+    const option = cell ? framedMeals(state, devourOptions(state, cell.n)).find((o) => o.cell === to) : null;
     if (!option) return fail('The chain can’t take that meal.');
     const events = [];
+    state.used.mealOnly = null;
     state.chaining.bites.push(doDevour(state, cell.n, option, events, true));
     state.stats.chains += 1;
     goOnChain(state, events);
@@ -1619,6 +1653,13 @@
     const old = cell.inmate;
     const events = [{ type: 'swap', cell: n }];
     const at = state.log.length;
+    // Severed Iron Maiden, as its card reads (report 9): the inmate replaced
+    // stands level, as many inmates above its rarity as below it, on the
+    // block as it is now (before the Scapegoat's Guillotine removes any).
+    // The user's recorded Replaces fit it, 20 of 20 (f5, 2026-10-20).
+    const others = boardInmates(state).filter((i) => i.id !== old.id);
+    const level = has(state, 'maiden') && others.filter((i) => i.tier > old.tier).length === others.filter((i) => i.tier < old.tier).length;
+    const aboveOld = others.filter((i) => i.tier > old.tier).length;
     cell.inmate = null;
     checkPrey(state);
     // Scapegoat's Guillotine: with 2 or more others on the block, 2 of them
@@ -1652,14 +1693,10 @@
     state.stats.swaps += 1;
     logAt(state, at, 'swap', `Replaced the ${describe(old)} in cell ${cellLabel(n)}. In came a ${describe(fresh)}.`, { type: 'swap', cell: n, old: snap(old), fresh: snap(fresh) });
     if (staked) log(state, 'tool', `Burning Stake: the ${describe(fresh)} in cell ${cellLabel(n)} came in Legendary.`, { type: 'stake', cell: n });
-    // Severed Iron Maiden: as many inmates above the newcomer's rarity as below it.
-    if (has(state, 'maiden')) {
-      const others = boardInmates(state).filter((i) => i.id !== fresh.id);
-      const above = others.filter((i) => i.tier > fresh.tier).length;
-      if (above === others.filter((i) => i.tier < fresh.tier).length) {
-        log(state, 'tool', `Severed Iron Maiden: ${above ? `${plural(above, 'inmate')} above it and as many below` : 'nobody above or below it'}, so the ${describe(fresh)} in cell ${cellLabel(n)} gains 3 tiers.`, { type: 'maiden', cell: n });
-        promote(state, fresh, 3, false, events);
-      }
+    // Severed Iron Maiden: the inmate replaced stood level, so the newcomer gains 3 tiers.
+    if (level) {
+      log(state, 'tool', `Severed Iron Maiden: the ${describe(old)} it replaced had ${aboveOld ? `${plural(aboveOld, 'inmate')} above it and as many below` : 'nobody above or below it'}, so the ${describe(fresh)} in cell ${cellLabel(n)} gains 3 tiers.`, { type: 'maiden', cell: n });
+      promote(state, fresh, 3, false, events);
     }
     afterGrowth(state, fresh, events);
     if (has(state, 'axe') && fresh.tier > old.tier) {
@@ -1778,7 +1815,7 @@
     const choice = state.pending[0];
     let pool = TOOL_IDS.filter((t) => !has(state, t) && !choice.options.includes(t));
     if (pool.length < 3) pool = TOOL_IDS.filter((t) => !has(state, t));
-    choice.options = shuffle(state, pool).slice(0, 3);
+    choice.options = drawTools(state, state, pool, 3);
     choice.rerolls -= 1;
     log(state, 'tool', `Re-rolled the offer: ${choice.options.map((t) => TOOLS[t].name).join(', ')}.`, { type: 'reroll' });
     return ok([]);
@@ -2177,7 +2214,7 @@
   };
 
   const api = {
-    VERSION, CELL_COUNT, OFFICE, SUPREME, RAINBOW, VAULT_SLOTS, TIERS, BEASTS, BEAST_INFO, FOOD_CHAIN, SECOND_MEAL, TOOLS, TOOL_IDS, GIFTS, GIFT_IDS,
+    VERSION, CELL_COUNT, OFFICE, SUPREME, RAINBOW, VAULT_SLOTS, TIERS, BEASTS, BEAST_INFO, FOOD_CHAIN, SECOND_MEAL, TOOLS, TOOL_IDS, BEAST_TOOLS, toolWeight, GIFTS, GIFT_IDS,
     EVENTS, EVENT_IDS, EVENT_POOL, USURP, PORTION_INMATES, APPETITE_TRIES, APPETITE_ODDS, INSTIGATE_EVENTS, INSTIGATE_EVENTS_EMPTY, instigateCells, instigateCount, CROW_CELLS, HUNT_BELOW, FREEDOM_CELLS, OBJECTIVES, OBJECTIVE_IDS, START_EVENTS,
     SCENARIOS, DEFAULT_PARAMS, PARAM_FIELDS,
     newGame, randomSeed, normalizeParams, serialize, deserialize,

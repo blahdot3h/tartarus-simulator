@@ -28,6 +28,18 @@
   // screen at the end writes the day line too, with max=0, and is left out.
   const DEFAULT_RULES = [
     '# kind | pattern | settle ms  (one trigger a line; # starts a note)',
+    "# Since the game's update of 2026-10-20 its log has only the screens",
+    '# opening and closing (Page@ OpenView / CloseView): no moves, no day line.',
+    '# The objective, the pick of 3 instruments, the day banner, the Treasure,',
+    '# and the board once the banner, the Treasure or an event closes:',
+    'objective | Page@ OpenView S16BoardTaskPop\\b | 1500',
+    'instruments | Page@ OpenView S16BoardRelicPop\\b | 1500',
+    'skip | Page@ OpenView S16BoardNewDayPop\\b | 0',
+    'board | Page@ CloseView \\d+_S16BoardNewDayPopCtrl | 1500',
+    'treasure | Page@ OpenView S16BoardColoredPop\\b | 1500',
+    'board | Page@ CloseView \\d+_S16BoardColoredPopCtrl | 600',
+    'board | Page@ CloseView \\d+_S16BoardEventPopCtrl | 1500',
+    '# Before that update, with Enable Log on:',
     '# Tartarus Prison is S16 in the log. A run\'s objective, when it shows one:',
     'objective | S16BoardTaskPop Run | 1500',
     '# The pick of 3 instruments, and after a re-roll:',
@@ -61,6 +73,34 @@
   // Defaults from earlier versions. Saved settings that are just one of
   // these give way to the defaults above.
   const RETIRED = [
+    [
+      '# kind | pattern | settle ms  (one trigger a line; # starts a note)',
+      '# Tartarus Prison is S16 in the log. A run\'s objective, when it shows one:',
+      'objective | S16BoardTaskPop Run | 1500',
+      '# The pick of 3 instruments, and after a re-roll:',
+      'instruments | S16BoardRelicPop Run | 1500',
+      'instruments | Btn_S16Board_RelicPop_Reroll | 2000',
+      '# Each day, once its banner closes, and after a move, once its cards come up:',
+      'board | \\[S16LastDay\\] check cur=\\d+ max=[1-9] | 1500',
+      'board | UI_S16_Card_Up | 1500',
+      '# After an action in the cell, and after each bite of a consume chain',
+      '# (the next meal to pick, or the board after the chain), once it plays',
+      "# out; unless the day ends, as a new day's banner drops a picture still",
+      '# waiting (skip):',
+      'board | Btn_S16Board_ActionCell | 2000',
+      'board | UI_S16_Click_Eat | 2500',
+      'skip | S16BoardNewDayPop Run | 0',
+      "# The Warden's Treasure, which a Chromatic prisoner opens, and the board",
+      '# once it closes, with the gift taken (a consume can open two in a row):',
+      'treasure | S16BoardColoredPop Run | 1500',
+      'board | S16BoardColoredPop Destory | 600',
+      "# The game's Speed-up button: no picture, it flips 'Speed-up is on' here:",
+      'speed | Btn_S16Board_Top_Speed | 0',
+      '# A Cancel (a consume chain stopped), once the board settles:',
+      'board | UI_S16_Click_Cancel | 1500',
+      "# After an event's Confirm (the Sewer Ratway's cell pick, or the board after it):",
+      'board | Btn_S16Board_EventPop_Confirm | 1500',
+    ].join('\n'),
     [
       '# kind | pattern | settle ms  (one trigger a line; # starts a note)',
       '# Tartarus Prison is S16 in the log. A run\'s objective, when it shows one:',
@@ -307,7 +347,7 @@
   // The Treasure's popup closing with no gift confirmed just before: the
   // player pressed View Prison Status, and the Treasure still waits.
   function treasureViewed(hits) {
-    const shut = stampMs((hits.find((h) => /ColoredPop Destory/.test(h.text || '')) || {}).at);
+    const shut = stampMs((hits.find((h) => /ColoredPop Destory|_S16BoardColoredPopCtrl\b/.test(h.text || '')) || {}).at);
     return !!shut && !(lastGift && shut >= lastGift && shut - lastGift < 3000);
   }
   function treasureAfter(hits) {
@@ -520,7 +560,7 @@
       if (giftOpen) gifts.taken += 1;
       giftOpen = false;
     }
-    if (/S16BoardColoredPop Run\b/.test(s.line)) giftOpen = true;
+    if (/S16BoardColoredPop Run\b|OpenView S16BoardColoredPop\b/.test(s.line)) giftOpen = true;
     const vault = /Anim_Archive_LightUp, Id = (\S+)/.exec(s.line);
     if (vault || /UI_S16_Premium_Quality_Fly/.test(s.line)) {
       const t = stampMs(s.at);

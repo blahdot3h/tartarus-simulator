@@ -1,5 +1,5 @@
 {
-  "generated": "2026-10-20",
+  "generated": "2026-10-21",
   "headlineRuns": 2000,
   "seed": "GUIDE",
   "toolBase": 1.8535,
@@ -7,8 +7,8 @@
     {
       "id": "trap",
       "name": "Blood-Stained Trap: Berserk Lion",
-      "value": 3.6035,
-      "delta": 1.75
+      "value": 3.651,
+      "delta": 1.7975
     },
     {
       "id": "maul",
@@ -194,87 +194,87 @@
   "gifts": [
     {
       "id": "scored",
-      "value": 4.0345
+      "value": 4.04
     },
     {
       "id": "wine",
       "name": "Crimson Vintage",
-      "value": 4.0055
+      "value": 4.0105
     },
     {
       "id": "horn",
       "name": "Brass Horn of Strife",
-      "value": 3.58
+      "value": 3.5785
     },
     {
       "id": "ring",
       "name": "Three-Headed Thumb Ring",
-      "value": 3.5455
+      "value": 3.5495
     },
     {
       "id": "brand",
       "name": "Brand of Original Sin",
-      "value": 3.4145
+      "value": 3.416
     }
   ],
   "headline": {
     "games": 2000,
-    "rainbowsPerRun": 4.0345,
-    "ci95": 0.0894,
+    "rainbowsPerRun": 4.04,
+    "ci95": 0.0895,
     "runsWithRainbow": 0.9915,
     "rainbowCounts": [
       0.0085,
-      0.06,
-      0.155,
-      0.2255,
+      0.059,
+      0.1555,
+      0.2245,
       0.215,
-      0.336
+      0.3375
     ],
-    "devoursPerRun": 5.55,
-    "bitesPerDevour": 1.449,
-    "chainStopsPerRun": 0.006,
+    "devoursPerRun": 5.56,
+    "bitesPerDevour": 1.45,
+    "chainStopsPerRun": 0.007,
     "chainLengths": [
       0.6653,
-      0.244,
+      0.2439,
       0.07,
-      0.0175,
+      0.0176,
       0.0032,
       0
     ],
     "rainbowSources": {
-      "chain": 1634,
-      "singleDevour": 1571,
-      "other": 4864
+      "chain": 1638,
+      "singleDevour": 1577,
+      "other": 4865
     },
     "firstRainbowDay": 8.69,
     "swapsPerRun": 8.74,
     "executionsPerRun": 0.063,
-    "doorsPerRun": 22.71
+    "doorsPerRun": 22.72
   },
   "stairs": [
     {
       "key": "3:1",
-      "n": 1525,
-      "rainbow": 0.4203,
+      "n": 1528,
+      "rainbow": 0.4202,
       "bites": 1.366
     },
     {
       "key": "4:",
-      "n": 1203,
+      "n": 1207,
       "rainbow": 1,
       "bites": 1
     },
     {
       "key": "3:0",
-      "n": 898,
-      "rainbow": 0.1403,
+      "n": 899,
+      "rainbow": 0.1413,
       "bites": 1.042
     },
     {
       "key": "2:11",
-      "n": 510,
-      "rainbow": 0.2373,
-      "bites": 1.533
+      "n": 512,
+      "rainbow": 0.2383,
+      "bites": 1.537
     },
     {
       "key": "1:111",
@@ -285,7 +285,7 @@
     {
       "key": "2:10",
       "n": 356,
-      "rainbow": 0.1713,
+      "rainbow": 0.1742,
       "bites": 1.396
     },
     {
@@ -296,14 +296,14 @@
     },
     {
       "key": "3:2",
-      "n": 297,
-      "rainbow": 0.6296,
-      "bites": 1.609
+      "n": 298,
+      "rainbow": 0.6309,
+      "bites": 1.611
     },
     {
       "key": "2:21",
-      "n": 275,
-      "rainbow": 0.3745,
+      "n": 276,
+      "rainbow": 0.3732,
       "bites": 1.891
     },
     {
@@ -314,9 +314,9 @@
     },
     {
       "key": "2:20",
-      "n": 208,
-      "rainbow": 0.1587,
-      "bites": 1.659
+      "n": 209,
+      "rainbow": 0.1579,
+      "bites": 1.656
     },
     {
       "key": "1:011",
@@ -326,14 +326,14 @@
     },
     {
       "key": "1:101",
-      "n": 187,
-      "rainbow": 0.0695,
-      "bites": 1.428
+      "n": 188,
+      "rainbow": 0.0691,
+      "bites": 1.426
     },
     {
       "key": "1:000",
-      "n": 160,
-      "rainbow": 0.0063,
+      "n": 161,
+      "rainbow": 0.0062,
       "bites": 1.031
     },
     {
@@ -349,16 +349,16 @@
       "bites": 1.059
     },
     {
+      "key": "1:121",
+      "n": 151,
+      "rainbow": 0.1523,
+      "bites": 1.722
+    },
+    {
       "key": "2:01",
       "n": 150,
       "rainbow": 0.14,
       "bites": 1.073
-    },
-    {
-      "key": "1:121",
-      "n": 150,
-      "rainbow": 0.1533,
-      "bites": 1.727
     },
     {
       "key": "1:001",
@@ -368,15 +368,15 @@
     },
     {
       "key": "1:210",
-      "n": 140,
-      "rainbow": 0.1071,
-      "bites": 1.936
+      "n": 141,
+      "rainbow": 0.1064,
+      "bites": 1.929
     },
     {
       "key": "1:211",
-      "n": 137,
-      "rainbow": 0.1971,
-      "bites": 2.036
+      "n": 138,
+      "rainbow": 0.1957,
+      "bites": 2.029
     },
     {
       "key": "1:120",
@@ -573,37 +573,37 @@
       },
       "tuned": {
         "games": 2000,
-        "rainbowsPerRun": 4.0345,
-        "ci95": 0.0894,
+        "rainbowsPerRun": 4.04,
+        "ci95": 0.0895,
         "runsWithRainbow": 0.9915,
         "rainbowCounts": [
           0.0085,
-          0.06,
-          0.155,
-          0.2255,
+          0.059,
+          0.1555,
+          0.2245,
           0.215,
-          0.336
+          0.3375
         ],
-        "devoursPerRun": 5.55,
-        "bitesPerDevour": 1.449,
-        "chainStopsPerRun": 0.006,
+        "devoursPerRun": 5.56,
+        "bitesPerDevour": 1.45,
+        "chainStopsPerRun": 0.007,
         "chainLengths": [
           0.6653,
-          0.244,
+          0.2439,
           0.07,
-          0.0175,
+          0.0176,
           0.0032,
           0
         ],
         "rainbowSources": {
-          "chain": 1634,
-          "singleDevour": 1571,
-          "other": 4864
+          "chain": 1638,
+          "singleDevour": 1577,
+          "other": 4865
         },
         "firstRainbowDay": 8.69,
         "swapsPerRun": 8.74,
         "executionsPerRun": 0.063,
-        "doorsPerRun": 22.71
+        "doorsPerRun": 22.72
       }
     }
   },
@@ -920,5 +920,5 @@
     }
   },
   "totalRuns": 602000,
-  "minutes": 4.8
+  "minutes": 4.5
 }

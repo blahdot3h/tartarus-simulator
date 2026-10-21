@@ -769,14 +769,18 @@
     }
   }
 
-  // What a prey mark still promises: both inmates rise a tier each morning.
+  // What a prey mark still promises: both inmates rise a tier each morning,
+  // for the mornings left in the mark and in the run. A mark made on the
+  // last day never pays: the riot comes before the next morning.
   function linkValue(st, ctx, link) {
+    const rounds = Math.max(0, Math.min(link.rounds, (st.maxDays || T.DEFAULT_PARAMS.drillDays) - st.day));
+    if (!rounds) return 0;
     let value = 0;
     for (const id of [link.lion, link.prey]) {
       const cell = T.cellOf(st, id);
       if (!cell || !cell.inmate) continue;
       const t = cell.inmate.tier;
-      const to = Math.min(RAINBOW, t + link.rounds);
+      const to = Math.min(RAINBOW, t + rounds);
       value += (to >= RAINBOW ? ctx.R : ctx.v[to]) - ctx.v[t];
     }
     return value;

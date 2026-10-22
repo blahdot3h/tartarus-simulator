@@ -2595,6 +2595,23 @@
     return out;
   }
 
+  // A reading's signature for QuickTime mode: what the screen shows (cells,
+  // warden, days, doors, buttons, a meal pick, instruments), without the
+  // reader's measures, which shift a little from frame to frame.
+  function readSignature(r, rd) {
+    const flagsOf = (o) => (o ? Object.keys(o).filter((k) => typeof o[k] === 'boolean' && o[k]).sort() : null);
+    return JSON.stringify({
+      cells: (r.cells || []).map((c) => [c.kind, c.beast || null, c.kind === 'inmate' ? c.tier : null, !!c.nest, c.shown ? c.shown.tier : null, !!c.shown && !!c.shown.scratch, !!c.prey, !!c.event]),
+      warden: r.warden ? r.warden.cell : null,
+      days: r.days ? r.days.days : null,
+      doors: r.doors && r.doors.cells ? r.doors.cells.slice().sort((a, b) => a - b) : null,
+      decision: flagsOf(r.decision),
+      chain: r.chain ? (r.chain.targets || []).slice().sort((a, b) => a - b) : null,
+      statusView: !!r.statusView,
+      tools: (rd && rd.tools ? rd.tools : []).map((t) => t.sim || null),
+    });
+  }
+
   function scanToModel(r, base) {
     if (r.chain) return chainToModel(r, base);
     const m = JSON.parse(JSON.stringify(base));
@@ -3403,6 +3420,18 @@
       langMiss: () => (langMiss ? { what: langMiss.what, at: langMiss.at, lang: langName(gameLang) } : null),
       useObjective: (read) => useObjective(read),
       useTreasure: (after) => useTreasure(after),
+      // QuickTime mode (js/quicktime.js): a Treasure seen right after a board
+      // was read, without View Prison Status. The gift is advised on that
+      // last board, with what led to it (see useTreasure), as a guess: View
+      // Prison Status still gives the exact advice.
+      treasureGuess: (after) => {
+        useTreasure(after);
+        if (!model.treasureWait) return false;
+        model.treasureWait = false;
+        changed();
+        renderScan();
+        return ask(true);
+      },
       // Auto Screenshot Mode's Treasure counts ({ rainbows, taken }): the
       // picks waiting, or null without counts. giftsDone ends a tally that
       // went stale (no Treasure for a while).
@@ -3413,6 +3442,46 @@
       useReading: () => useScan(),
       ask: () => ask(true),
       recommendation: () => (fresh() && settled() ? recommendation() : null),
+      // Local QuickTime mode may show the strategy's provisional pick while
+      // its short Monte Carlo check finishes. Never return an old board's pick.
+      quickRecommendation: () => (fresh() ? recommendation() : null),
+      quickTimeState: () => {
+        const r = reader.result;
+        const rd = reader.reading;
+        if (!r || !r.ok || !rd) return null;
+        const loaded = reader.loaded === rd;
+        const current = loaded ? model : rd.model;
+        return {
+          chain: !!r.chain,
+          controls: !!(r.chain || r.decision || (r.doors && r.doors.cells && r.doors.cells.length)),
+          daysRead: !!r.days || (loaded && fresh()),
+          wardenRead: !!r.warden || (loaded && fresh()),
+          step: current.step,
+          giftPicksUncertain: current.startEvent === 'opulence' && !gifts.log,
+          toolsToConfirm: current.toolsToConfirm || '',
+          checks: loaded ? flags.size : rd.checks.size,
+          // What was seen on the screen, not the model made of it (which
+          // also carries the board before): the same screen read twice
+          // gives the same signature, whatever was fixed on the board since.
+          signature: readSignature(r, rd),
+        };
+      },
+      // The same screen was read again: the board loaded from it stays, with
+      // what the player fixed on it (and its cells still to check).
+      keepReading: () => {
+        if (!reader.reading || !reader.loaded) return false;
+        reader.loaded = reader.reading;
+        return true;
+      },
+      // The Warden's Treasure as the analyzer has it: open (the gift choice),
+      // waiting for the board behind it, or with that board seen.
+      giftState: () => ({
+        open: model.step === 'choice' && !!model.choice && model.choice.kind === 'gift',
+        wait: !!model.treasureWait,
+        seen: !!model.treasureSeen,
+        picked: pickedSinceBoard(),
+        opulence: model.startEvent === 'opulence',
+      }),
       // What the reader made of the last picture, in full (the desktop app's
       // test record keeps it).
       readingSummary: () => (reader.result && reader.image ? readingSummary(true) : ''),

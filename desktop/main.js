@@ -64,6 +64,18 @@ app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 // The app never plays sound: no page it loads, now or after a site change,
 // can make any (the user heard sounds in the background while gaming).
 app.commandLine.appendSwitch('mute-audio');
+// Linux: under Wayland the capture goes through the desktop's portal, which
+// asks the player to pick a window at each look and names none of them. On
+// X11 (XWayland, where the game runs under Proton) windows are listed by
+// their titles, as on Windows. There, Chromium's GPU process crashes when the
+// game's window share starts (NVIDIA), three times and the app closes: the
+// pages draw nothing the processor can't.
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('ozone-platform', 'x11');
+  process.env.XDG_SESSION_TYPE = 'x11';
+  delete process.env.WAYLAND_DISPLAY;
+  app.disableHardwareAcceleration();
+}
 app.setAppUserModelId('io.github.blahdot3h.tartarus-overlay');
 
 // ---------- Settings ----------
@@ -242,8 +254,17 @@ async function findLog() {
   logFoundBy = 'in the game folders';
   const roots = new Map();
   const addRoot = (p) => p && roots.set(path.resolve(p).toLowerCase(), path.resolve(p));
-  for (const [key, value] of [['HKCU\\Software\\Valve\\Steam', 'SteamPath'], ['HKLM\\SOFTWARE\\WOW6432Node\\Valve\\Steam', 'InstallPath'], ['HKLM\\SOFTWARE\\Valve\\Steam', 'InstallPath']]) addRoot(await regQuery(key, value));
-  addRoot('C:\\Program Files (x86)\\Steam');
+  if (process.platform === 'win32') {
+    for (const [key, value] of [['HKCU\\Software\\Valve\\Steam', 'SteamPath'], ['HKLM\\SOFTWARE\\WOW6432Node\\Valve\\Steam', 'InstallPath'], ['HKLM\\SOFTWARE\\Valve\\Steam', 'InstallPath']]) addRoot(await regQuery(key, value));
+    addRoot('C:\\Program Files (x86)\\Steam');
+  } else {
+    // Linux (Proton): Steam's usual homes, native and Flatpak.
+    const home = app.getPath('home');
+    for (const p of ['.steam/steam', '.local/share/Steam', '.var/app/com.valvesoftware.Steam/.local/share/Steam']) {
+      const full = path.join(home, p);
+      if (statOf(full)) addRoot(fs.realpathSync(full));
+    }
+  }
   const libraries = new Map(roots);
   for (const root of roots.values()) {
     try {
@@ -266,7 +287,7 @@ async function findLog() {
       // The game isn't in this library.
     }
   }
-  for (const base of ['C:\\Program Files (x86)\\Torchlight Infinite', 'C:\\Program Files\\Torchlight Infinite']) {
+  if (process.platform === 'win32') for (const base of ['C:\\Program Files (x86)\\Torchlight Infinite', 'C:\\Program Files\\Torchlight Infinite']) {
     logs.push(path.join(base, 'Game', 'UE_game', 'Torchlight', 'Saved', 'Logs', 'UE_game.log'));
   }
   for (const p of [...logs]) if (virtualStore(p)) logs.push(virtualStore(p));

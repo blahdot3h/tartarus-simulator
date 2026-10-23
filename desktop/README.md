@@ -52,6 +52,34 @@ capture's list (about 0.3 s of processor time a look). Once a minute while
 the game runs, and every 10 minutes otherwise, the debug log notes the app's
 memory and processor use (`use:`); the debug report carries it too.
 
+**Linux** (KDE Plasma under Wayland, the game under Proton). `main.js` runs
+Electron on X11 (XWayland), where the game's window is listed by its title.
+`XDG_SESSION_TYPE=x11` must also be set before Electron starts: `main.js`
+sets it too late for the hotkeys, and Plasma then asks the player to approve
+them (Global Shortcuts Requested) at each start. A launcher in
+`~/.local/bin/tartarus-overlay` (`chmod +x`, path to this folder adjusted):
+
+```
+#!/bin/sh
+cd "$HOME/tartarus-simulator/desktop" || exit 1
+unset ELECTRON_RUN_AS_NODE
+export XDG_SESSION_TYPE=x11
+exec ./node_modules/electron/dist/electron . "$@"
+```
+
+and, for the app menu, `~/.local/share/applications/tartarus-overlay.desktop`
+(a .desktop file doesn't expand `~` or `$HOME`: write the full paths):
+
+```
+[Desktop Entry]
+Type=Application
+Name=Tartarus Overlay
+Comment=Torchlight: Infinite board analyzer overlay
+Exec=/home/<you>/.local/bin/tartarus-overlay
+Icon=/home/<you>/tartarus-simulator/desktop/build/icon.png
+Categories=Game;
+```
+
 Under `--test`, the app takes commands from `test-commands.txt` in its user
 data folder (`quit`, `hide <window>`, `cpu <most|half|quarter|one>`):
 Electron's main process gets no stdin on Windows.

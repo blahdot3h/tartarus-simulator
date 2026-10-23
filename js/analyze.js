@@ -3466,6 +3466,10 @@
           giftPicksUncertain: current.startEvent === 'opulence' && !gifts.log,
           toolsToConfirm: current.toolsToConfirm || '',
           checks: loaded ? flags.size : rd.checks.size,
+          // A new reading whose day isn't the board's or the next: a new run,
+          // or a countdown misread under a notification (which would drop
+          // the run's instruments). QuickTime mode reads it again first.
+          jump: !loaded && !!reader.loaded && !!rd.model && (rd.model.day < model.day || rd.model.day > model.day + 1),
           // What was seen on the screen, not the model made of it (which
           // also carries the board before): the same screen read twice
           // gives the same signature, whatever was fixed on the board since.

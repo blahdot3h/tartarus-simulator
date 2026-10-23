@@ -143,7 +143,7 @@ function bridgeHarness(options = {}) {
     ask: () => { calls.ask++; return state.ask(); }, recommendation, quickRecommendation: recommendation,
     setGameLang() {},
   };
-  const track = { getSettings: () => ({ displaySurface: 'window' }), stop() {}, addEventListener() {} };
+  const track = { getSettings: () => ({ displaySurface: options.surface || 'window' }), stop() {}, addEventListener() {} };
   const spoken = [];
   const stored = {};
   const docListeners = {};
@@ -192,6 +192,15 @@ function bridgeHarness(options = {}) {
       const poll = [...intervals.values()].find((i) => i.ms === 180);
       if (poll) poll.fn();
     },
+    // Time passes on a still screen, the 250 ms timer running.
+    async wait(ms) {
+      for (let t = 0; t < ms; t += 250) {
+        now += 250; tick();
+        for (let i = 0; i < 3; i++) await new Promise((resolve) => setImmediate(resolve));
+      }
+      const poll = [...intervals.values()].find((i) => i.ms === 180);
+      if (poll) poll.fn();
+    },
     fix() { rd.fixed = 0; state.isFresh = false; },
     get: (id) => get(id).textContent,
     stop: () => get('qt-stop').listeners.click(),
@@ -234,6 +243,8 @@ test('the same board read again keeps the fixes made on it', async () => {
   const bridge = bridgeHarness();
   await bridge.start();
   await bridge.screen({ board: 'A', checks: 2 });
+  // Doubts that stay: loaded once a notification would have gone.
+  await bridge.wait(7000);
   assert.equal(bridge.calls.useReading, 1);
   assert.match(bridge.get('qt-advice'), /advice hidden/i);
   bridge.fix();
@@ -268,6 +279,7 @@ test('the Treasure guess uses what was advised on the last board, not an older o
   assert.match(bridge.get('qt-advice'), /Replace/);
   // Board B is read but its advice stays hidden (cells to check).
   await bridge.screen({ board: 'B', checks: 1 });
+  await bridge.wait(7000);
   await bridge.screen(false);
   assert.deepEqual(bridge.calls.guesses, [undefined]);
   bridge.stop();
@@ -305,6 +317,41 @@ test('no treasure guess without a board, or twice for one treasure (Opulence)', 
   assert.equal(plan({ boardSeen: true, guessed: true, lastAction: 'swap' }).use, false);
   assert.equal(plan(null).use, false);
 });
+test('a notification over the board is read again, not loaded: the board behind it comes back', async () => {
+  const bridge = bridgeHarness({ storage: { 'qt-speak': '1' } });
+  await bridge.start();
+  await bridge.screen({ board: 'A' });
+  assert.equal(bridge.calls.useReading, 1);
+  // A banner over the countdown or the instruments: the read has doubts.
+  await bridge.screen({ board: 'covered', checks: 1 });
+  assert.equal(bridge.calls.useReading, 1, 'the misread is not loaded');
+  assert.match(bridge.get('qt-status'), /covered/);
+  await bridge.wait(2000);
+  assert.equal(bridge.calls.useReading, 1, 'still held while it may be a notification');
+  // The banner goes: the same board as before, its advice back, said once.
+  await bridge.screen({ board: 'A' });
+  assert.equal(bridge.calls.useReading, 1);
+  assert.match(bridge.get('qt-advice'), /Advice: Go to cell 04/);
+  assert.deepEqual(bridge.spoken, ['Go to cell 4.']);
+  bridge.stop();
+});
+test('Read again loads a doubtful screen at once', async () => {
+  const bridge = bridgeHarness();
+  await bridge.start();
+  await bridge.screen({ board: 'A', checks: 1 });
+  assert.equal(bridge.calls.useReading, 0);
+  bridge.elements.get('qt-rescan').listeners.click();
+  await bridge.wait(1500);
+  assert.equal(bridge.calls.useReading, 1);
+  bridge.stop();
+});
+test('the whole Mac screen (AirPlay) is read like a window when nothing covers it', async () => {
+  const bridge = bridgeHarness({ surface: 'monitor' });
+  await bridge.start();
+  await bridge.screen({ board: 'A' });
+  assert.match(bridge.get('qt-advice'), /Advice: Go to cell 04/);
+  bridge.stop();
+});
 function contentRect(lum, w, h) {
   const context = { window: {}, URLSearchParams, location: { search: '' } };
   vm.runInNewContext(fs.readFileSync(sourcePath, 'utf8'), context);
@@ -325,6 +372,24 @@ test('a dark edge of the picture does not move the bars: they are centred', () =
   // The game's left edge is as dark as the bar: the right bar sets both.
   const r = contentRect(screenWith(14, 0, 146, 100, (x) => (x < 30 ? 0 : 90)), 160, 100);
   assert.ok(Math.abs(r.x - 14 / 160) < 1e-9 && Math.abs(r.w - 132 / 160) < 1e-9);
+});
+function barIntrusion(lum, rect) {
+  const context = { window: {}, URLSearchParams, location: { search: '' } };
+  vm.runInNewContext(fs.readFileSync(sourcePath, 'utf8'), context);
+  return context.window.TartarusQuickTime.barIntrusion(lum, 160, 100, rect, 0);
+}
+test('a Mac notification over the black bar is seen; a cursor there is not', () => {
+  const picture = { x: 14 / 160, y: 0, w: 132 / 160, h: 1 };
+  assert.equal(barIntrusion(screenWith(14, 0, 146, 100), picture), false);
+  // The banner: top right, over the bar and the picture's edge.
+  const banner = screenWith(14, 0, 146, 100);
+  for (let y = 2; y < 10; y++) for (let x = 120; x < 158; x++) banner[y * 160 + x] = 200;
+  assert.equal(barIntrusion(banner, picture), true);
+  const cursor = screenWith(14, 0, 146, 100);
+  for (let y = 50; y < 53; y++) for (let x = 150; x < 153; x++) cursor[y * 160 + x] = 255;
+  assert.equal(barIntrusion(cursor, picture), false);
+  // No bars (a window share, or none measured): nothing to cover.
+  assert.equal(barIntrusion(banner, { x: 0, y: 0, w: 1, h: 1 }), false);
 });
 test('no bars, a black screen or a tiny lit spot: the whole frame is used', () => {
   assert.equal(contentRect(screenWith(0, 0, 160, 100), 160, 100), null);

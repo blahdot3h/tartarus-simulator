@@ -69,8 +69,9 @@
     const MAX_LINE = 8192; // characters of one line that are checked
     const MAX_HITS = 200; // lines reported per look: the newest
     // The game's own lines, which every trigger is: with the game's Enable
-    // Log off, it writes almost none (a player's log: 42 in all).
-    const DETAIL = /\b(TLLua|TLGame):/;
+    // Log off, it writes almost none (a player's log: 42 in all). Since the
+    // game's update of 2026-10-20 they're "TLShipping: Display: [Game] ...".
+    const DETAIL = /\b(TLLua|TLGame):|\bTLShipping: \w+: \[Game\]/;
     // The game's language, which it writes every few minutes ("sdkLang=en_US"):
     // only its two letters are kept, and the line is dropped like any other.
     const LANG = /\bsdkLang=([A-Za-z]{2})[_-]/;

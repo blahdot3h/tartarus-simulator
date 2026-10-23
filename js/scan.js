@@ -288,14 +288,18 @@
     cnorm = Math.sqrt(cnorm);
     for (let j = 0; j < cn; j++) ctv[j] /= cnorm;
     coarse.pts = keepIdx.map((i) => pts[i]);
-    const coarseScore = (lv, s, ox, oy) => {
+    // A scale's reference points, scaled once for its whole translation
+    // search, not for every candidate position (a player's patch: the same
+    // sums in the same order, so the same scores, about 29% faster).
+    const coarseX = new Float64Array(cn);
+    const coarseY = new Float64Array(cn);
+    const coarseScore = (lv, ox, oy) => {
       let sx = 0;
       let sxx = 0;
       let sxt = 0;
-      const k = s / lv.f;
       for (let j = 0; j < cn; j++) {
-        let xi = (ox + coarse.pts[j][0] * k) | 0;
-        let yi = (oy + coarse.pts[j][1] * k) | 0;
+        let xi = (ox + coarseX[j]) | 0;
+        let yi = (oy + coarseY[j]) | 0;
         if (xi < 0) xi = 0;
         else if (xi >= lv.w) xi = lv.w - 1;
         if (yi < 0) yi = 0;
@@ -331,10 +335,14 @@
       const oy0 = Math.ceil(-minY * k - 0.08 * bh * k);
       const oy1 = Math.floor(lv.h - 1 - maxY * k + 0.08 * bh * k);
       if (ox1 < ox0 || oy1 < oy0) continue;
+      for (let j = 0; j < cn; j++) {
+        coarseX[j] = coarse.pts[j][0] * k;
+        coarseY[j] = coarse.pts[j][1] * k;
+      }
       let best = null;
       for (let oy = oy0; oy <= oy1; oy++) {
         for (let ox = ox0; ox <= ox1; ox++) {
-          const sc = coarseScore(lv, s, ox, oy);
+          const sc = coarseScore(lv, ox, oy);
           if (!best || sc > best.score) best = { ox, oy, score: sc };
         }
       }

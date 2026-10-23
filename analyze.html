@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600;700&family=Big+Shoulders+Stencil+Display:wght@600;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="css/style.css?v=20261019b">
+<link rel="stylesheet" href="css/style.css?v=20261022c">
 </head>
 <body>
 <main class="analyzer" id="analyzer">
@@ -56,6 +56,7 @@
           <option value="en">English</option>
           <option value="ru">Русский</option>
           <option value="zh">中文</option>
+          <option value="ja">日本語</option>
           <option value="other">Another</option>
         </select></label></p>
     <p class="field-note az-lang-note" id="az-lang-note" hidden></p>
@@ -125,6 +126,10 @@
               </div>
               <div class="az-tools-dialog-body" id="az-tools-dialog-body"></div>
             </dialog>
+            <div class="az-play-notes" id="az-play-notes" hidden>
+              <h4>Playing your instruments</h4>
+              <ul id="az-play-notes-list"></ul>
+            </div>
             <button type="button" class="az-report-link" data-report="tool"><span aria-hidden="true">+</span> Instrument not here? Report it</button>
           </section>
         </div>
@@ -338,15 +343,16 @@
   </footer>
 </main>
 
-<script src="js/engine.js?v=20261019b"></script>
-<script src="js/board.js?v=20261019b"></script>
-<script src="js/tool-combos.js?v=20261019b"></script>
-<script src="js/solver.js?v=20261019b"></script>
-<script src="js/live.js?v=20261019b"></script>
-<script src="js/report.js?v=20261019b"></script>
-<script src="js/capture.js?v=20261019b"></script>
-<script src="js/analyze.js?v=20261019b"></script>
-<script src="js/auto.js?v=20261019b"></script>
-<script src="js/update.js?v=20261019b"></script>
+<script src="js/engine.js?v=20261022c"></script>
+<script src="js/board.js?v=20261022c"></script>
+<script src="js/tool-combos.js?v=20261022c"></script>
+<script src="js/solver.js?v=20261022c"></script>
+<script src="js/live.js?v=20261022c"></script>
+<script src="js/report.js?v=20261022c"></script>
+<script src="js/capture.js?v=20261022c"></script>
+<script src="js/tips.js?v=20261022c"></script>
+<script src="js/analyze.js?v=20261022c"></script>
+<script src="js/auto.js?v=20261022c"></script>
+<script src="js/update.js?v=20261022c"></script>
 </body>
 </html>

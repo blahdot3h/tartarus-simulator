@@ -38,7 +38,11 @@ const DIR = flag('dir') ? path.resolve(flag('dir')) : path.join(ROOT, 'beta', 'd
 const RAW = path.join(DIR, 'raw');
 const STATE = path.join(DIR, 'state.json');
 const RATES = path.join(DIR, 'rates.json');
-const PAGE = 2000;
+// Rows a request asks for. 2000 a page made the collector answer HTTP 503
+// (a Cloudflare limit) from 2026-10-16 on; a page that fails so is halved,
+// down to MIN_PAGE, before the pull gives up.
+const PAGE = 200;
+const MIN_PAGE = 25;
 const FEW = 30; // below this many, a rate is shown but not judged
 
 // ---------- Pulling ----------
@@ -50,8 +54,14 @@ async function pull() {
   fs.mkdirSync(RAW, { recursive: true });
   const state = readJson(STATE, { last: 0 });
   let total = 0;
+  let page = PAGE;
   for (;;) {
-    const res = await fetch(`${url}/v1/export?after=${state.last}&limit=${PAGE}`, { headers: { Authorization: `Bearer ${token}` } });
+    const res = await fetch(`${url}/v1/export?after=${state.last}&limit=${page}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (res.status >= 500 && page > MIN_PAGE) {
+      page = Math.max(MIN_PAGE, Math.floor(page / 2));
+      console.log(`The collector's export answered HTTP ${res.status}: trying ${page} a page.`);
+      continue;
+    }
     if (!res.ok) throw new Error(`The collector's export failed: HTTP ${res.status}.`);
     const { rows, last } = await res.json();
     if (!rows.length) break;
@@ -65,10 +75,16 @@ async function pull() {
     state.last = last;
     total += rows.length;
     writeJson(STATE, state);
-    if (rows.length < PAGE) break;
+    if (rows.length < page) break;
   }
   console.log(total ? `Pulled ${total} new ${total === 1 ? 'board' : 'boards'}.` : 'No new boards.');
-  if (total || !fs.existsSync(RATES)) rates();
+  // The boards are kept whatever happens next: a failing measure doesn't
+  // stop them being committed.
+  try {
+    if (total || !fs.existsSync(RATES)) rates();
+  } catch (e) {
+    console.log(`The rates weren't measured this time: ${e.message}`);
+  }
 }
 
 // ---------- Reports ----------

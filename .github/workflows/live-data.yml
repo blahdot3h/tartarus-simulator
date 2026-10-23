@@ -32,7 +32,9 @@ jobs:
           LIVE_DATA_TOKEN: ${{ secrets.LIVE_DATA_TOKEN }}
         run: node tools/live-data.js pull
 
+      # Whatever was pulled is kept, even when the pull stopped partway.
       - name: Commit
+        if: always()
         run: |
           git add beta/data
           if git diff --cached --quiet; then

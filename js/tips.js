@@ -28,7 +28,7 @@
     dogtag: 'Open doors: 25% of the time the inmate behind the door comes out a tier higher.',
     cage: 'Consume often: 40% of the time the eaten inmate\'s cell refills at once, so consumes don\'t thin the block.',
     blacklist: 'Once 5 or fewer cells are still locked, every door a patrol opens raises 2 random inmates: open doors early to get there, then keep opening.',
-    shortchain: 'Walk short: a patrol of 3 cells or fewer has 50% to open a random locked cell, so take the near door when the choice is close. Alone it measured below no instrument.',
+    shortchain: 'Walk short: a patrol of 3 cells or fewer has 50% to open a random locked cell, so take the near door when the choice is close. Alone it measured about even with no instrument.',
     maiden: 'Replace an inmate that stands level (as many inmates above its rarity as below it, an inmate alone always is): the new one comes in 3 tiers up. The advice says when a Replace gets the +3.',
     whip: 'One door fewer each morning, and every bite of a consume has 35% for +1 tier: consume every day and make chains.',
     ravenous: 'Each morning your highest inmate removes the inmates on both sides of it, with 40% for +1 tier each: keep cheap inmates or empty cells beside your best one.',
@@ -41,27 +41,32 @@
     trap: 'With the warden on a Lion, Hunt marks one of its meals and both rise a tier each morning for 3 mornings. Hunt early on pairs that can climb; the last 3 days pay less, the last day nothing. A day has a Consume, a Replace or a Hunt.',
   };
 
-  // Pairs worth noting: the strongest together and the worst clashes.
+  // Pairs worth noting: the strongest together and the worst clashes. Measured
+  // again with runs starting with 4 inmates out and the other live-data
+  // rules (2026-10-22).
   const PAIR_NOTES = {
-    'maiden|rope': 'Every Replace brings Rare or better, and an inmate alone on the block stands level: replace your only inmate and it comes back 3 tiers up. Keep the block thin. The best pair measured (8.93 Rainbows a run).',
-    'ironbox|skewer': 'The nests hatch Rare Rats, and Rats eat Rats of their rarity: hatched Rats feed each other (4.50, +2.83 beyond the two apart).',
-    'coin|ironbox': 'Hatched Rare Rats come in matching pairs for the Coin to merge: leave them be (4.50, +2.42 beyond the two apart).',
-    'maiden|scapegoat': 'Replace only an inmate that stands level, counted before the Scapegoat removes 2: the new one gets +3. A Replace that isn\'t level just throws inmates away (4.98, +1.26 beyond the two apart).',
-    'crown|keys': 'The Keys\' extra doors fill the block with same-rarity meals for your Lions (4.65, +1.17 beyond the two apart).',
-    'blacklist|keys': 'The Keys take you down to 5 locked cells fast, where every opened door raises 2 inmates (3.29, +0.98 beyond the two apart).',
-    'coin|keys': 'More open doors bring more matching pairs for the Coin (3.65, +0.81 beyond the two apart).',
-    'keys|trap': 'More open doors bring more meals for a Hunt (4.49, +0.74 beyond the two apart).',
-    'keys|maul': 'More open doors bring more Lions and Wolves for Mammoths to eat up (4.38, +0.74 beyond the two apart).',
-    'maiden|stake': 'Replace low inmates that stand level: 40% come in Legendary, and +3 on top (3.81, +0.68 beyond the two apart).',
-    'claws|muzzle': 'Eating through scratched doors keeps the block thin, where consumes get the Muzzle\'s +2 (4.37, +0.62 beyond the two apart).',
-    'scapegoat|trap': 'Clash: the Scapegoat\'s removals take Prey marks and Lions\' meals. Hunt, and avoid a Replace with 2 or more others on the block (-1.15 against the two apart).',
-    'rope|scapegoat': 'Clash: Noose Replaces are already Rare or better, and the Scapegoat throws 2 inmates away for them. Replace with fewer than 2 others on the block (-1.08 against the two apart).',
-    'maul|trap': 'Clash: Mammoths eat Lions, and Hunts want Lions alive. Pick one plan for the run (-0.94 against the two apart).',
-    'ironbox|maul': 'Clash: hatched Rats eat Mammoths. Keep Mammoths away from Rat rarities, or let the Rats have the low ones (-0.89 against the two apart).',
-    'revenge|trap': 'Clash: consumes and Hunts compete for the day\'s action, and a consume can break a Prey mark (-0.83 against the two apart).',
-    'crown|scapegoat': 'Clash: the Scapegoat\'s removals take your Lions\' meals. Replace with fewer than 2 others on the block (-0.77 against the two apart).',
-    'claws|ironbox': 'Clash: nests use up the locked cells the Claws scratch (-0.75 against the two apart).',
-    'crown|maul': 'Clash: Mammoths eat Lions. Decide which beast your run climbs with (-0.64 against the two apart).',
+    'maiden|rope': 'Every Replace brings Rare or better, and an inmate alone on the block stands level: replace your only inmate and it comes back 3 tiers up. Keep the block thin: a run starts with 4 inmates out, so let consumes clear it first. One of the best pairs measured (5.37 Rainbows a run, +1.81 beyond the two apart).',
+    'ironbox|skewer': 'The nests hatch Rare Rats, and Rats eat Rats of their rarity: hatched Rats feed each other (4.54, +2.75 beyond the two apart).',
+    'coin|ironbox': 'Hatched Rare Rats come in matching pairs for the Coin to merge: leave them be (4.51, +2.07 beyond the two apart).',
+    'maiden|scapegoat': 'Replace only an inmate that stands level, counted before the Scapegoat removes 2: the new one gets +3. A Replace that isn\'t level just throws inmates away (4.95, +1.65 beyond the two apart).',
+    'crown|keys': 'The Keys\' extra doors fill the block with same-rarity meals for your Lions (4.58, +0.89 beyond the two apart).',
+    'blacklist|keys': 'The Keys take you down to 5 locked cells fast, where every opened door raises 2 inmates (3.38, +0.84 beyond the two apart).',
+    'coin|keys': 'More open doors bring more matching pairs for the Coin (3.56, +0.63 beyond the two apart).',
+    'keys|trap': 'More open doors bring more meals for a Hunt (4.73, +0.38 beyond the two apart).',
+    'keys|maul': 'More open doors bring more Lions and Wolves for Mammoths to eat up (4.39, +0.68 beyond the two apart).',
+    'maiden|stake': 'Replace low inmates that stand level: 40% come in Legendary, and +3 on top (2.80, +0.36 beyond the two apart).',
+    'claws|muzzle': 'Eating through scratched doors keeps the block thin, where consumes get the Muzzle\'s +2 (3.76, +0.46 beyond the two apart).',
+    'scapegoat|trap': 'Clash: the Scapegoat\'s removals take Prey marks and Lions\' meals. Hunt, and avoid a Replace with 2 or more others on the block (-1.78 against the two apart).',
+    'rope|scapegoat': 'Clash: Noose Replaces are already Rare or better, and the Scapegoat throws 2 inmates away for them. Replace with fewer than 2 others on the block (-1.17 against the two apart).',
+    'maul|trap': 'Clash: Mammoths eat Lions, and Hunts want Lions alive. Pick one plan for the run (-1.46 against the two apart).',
+    'ironbox|maul': 'Clash: hatched Rats eat Mammoths. Keep Mammoths away from Rat rarities, or let the Rats have the low ones (-0.87 against the two apart).',
+    'revenge|trap': 'Clash: consumes and Hunts compete for the day\'s action, and a consume can break a Prey mark (-1.43 against the two apart).',
+    'crown|scapegoat': 'Clash: the Scapegoat\'s removals take your Lions\' meals. Replace with fewer than 2 others on the block (-1.03 against the two apart).',
+    'claws|ironbox': 'Clash: nests use up the locked cells the Claws scratch (-0.66 against the two apart).',
+    'crown|maul': 'Clash: Mammoths eat Lions. Decide which beast your run climbs with (-0.83 against the two apart).',
+    'crown|trap': 'The best pair measured (5.39 Rainbows a run), though less than the two apart (-0.98): both play through Lions, and a Lion consuming its marked prey ends the Hunt. Hunt first, and let Lions consume once the marks run out.',
+    'ravenous|trap': 'Clash: each morning the Ravenous Chains\' highest inmate removes the inmates beside it, which can take a marked prey or its Lion. Keep Hunt pairs away from your best inmate (-1.11 against the two apart).',
+    'trap|whip': 'Clash: the Whip pays for consuming every day, and a Hunt uses the day\'s action instead. Pick one plan for the run (-1.11 against the two apart).',
   };
 
   // The start-of-run cards ("contracts").

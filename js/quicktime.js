@@ -72,8 +72,9 @@
   // levels of a small copy of the frame (w by h). The bars are centred, so a
   // side's margin is the smaller of the two; a measure that doesn't look like
   // an iPad (a dark scene, another window) gives the whole frame (null).
+  function barLevel(lum, w, h) { return Math.max(lum[0] || 0, lum[w - 1] || 0, lum[(h - 1) * w] || 0, lum[h * w - 1] || 0); }
   function contentRect(lum, w, h) {
-    const bar = Math.max(lum[0] || 0, lum[w - 1] || 0, lum[(h - 1) * w] || 0, lum[h * w - 1] || 0);
+    const bar = barLevel(lum, w, h);
     const lit = (v) => (v || 0) > bar + 12;
     let left = w, right = -1, top = h, bottom = -1;
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
@@ -86,6 +87,32 @@
     if (mx <= 1 && my <= 1) return null;
     const rect = { x: mx / w, y: my / h, w: (w - 2 * mx) / w, h: (h - 2 * my) / h };
     return rect.w * rect.h >= 0.3 ? rect : null;
+  }
+  // Something over the black bars around the iPad's picture: a Mac
+  // notification (AirPods moved to the Mac), a menu or a window. It covers the
+  // picture's edge too, so nothing is read while it shows. rect: the picture
+  // (fractions), bar: the bars' grey level when it was measured. A cursor is
+  // too small to count.
+  function barIntrusion(lum, w, h, rect, bar) {
+    if (!rect || (rect.w >= 1 && rect.h >= 1)) return false;
+    const x0 = rect.x * w - 2, x1 = (rect.x + rect.w) * w + 1, y0 = rect.y * h - 2, y1 = (rect.y + rect.h) * h + 1;
+    let outside = 0, lit = 0;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      if (x >= x0 && x <= x1 && y >= y0 && y <= y1) continue;
+      outside++;
+      if ((lum[y * w + x] || 0) > bar + 24) lit++;
+    }
+    return outside > 0 && lit >= Math.max(12, outside * 0.004);
+  }
+  // A new board read with doubts that a banner over the iPad's picture would
+  // cause (days, warden, buttons, instruments, cells unsure, or a day that
+  // jumps): it isn't loaded straight away, so a notification can't replace
+  // the run's board and its instruments with a misreading. An event or an
+  // Opulence count is a real question, not a doubt.
+  function doubtfulRead(read, state) {
+    if (!read || !read.ok || !state) return false;
+    return (!state.controls && !read.statusView) || !state.daysRead || !state.wardenRead || !!state.toolsToConfirm || !!state.jump
+      || !!state.checks || (state.checks == null && !!read.unsure);
   }
   // A session's record for the local site (tools/serve.js, ?record=1): one
   // line an event, posted one after another in the order they happened. A
@@ -116,7 +143,7 @@
     }
   }
   function endText(state) { return state && state.chain ? 'Cancel the consume, then End the day.' : 'Press End.'; }
-  window.TartarusQuickTime = { FrameGate, RecognitionLane, Recorder, boardReadiness, contentRect, endText, treasurePlan };
+  window.TartarusQuickTime = { FrameGate, RecognitionLane, Recorder, barIntrusion, boardReadiness, contentRect, doubtfulRead, endText, treasurePlan };
   if (typeof document === 'undefined' || typeof navigator === 'undefined') return;
   const params = new URLSearchParams(location.search);
   const A = window.TartarusAnalyzer;
@@ -199,14 +226,29 @@
   // The iPad's picture inside the frame (fractions), measured every 2 s.
   const probe = document.createElement('canvas'); probe.width = 160; probe.height = 100;
   const probeCtx = probe.getContext('2d', { willReadFrequently: true });
-  let view = { x: 0, y: 0, w: 1, h: 1 }, measured = 0, surface = 'window';
+  const FULL = { x: 0, y: 0, w: 1, h: 1 };
+  let view = FULL, measured = 0, surface = 'window';
+  // bar: the bars' level when the view was taken; candidate: a different
+  // view seen once, taken when the next measure agrees (a notification
+  // passing over a bar mustn't move the picture); covered: something is
+  // over the bars now.
+  let bar = 0, candidate = null, viewTaken = false, covered = false, wasCovered = false;
   const pixels = new Uint8Array(sample.width * sample.height);
-  function measureView() {
+  const sameRect = (a, b) => Math.abs(a.x - b.x) < 0.015 && Math.abs(a.y - b.y) < 0.015 && Math.abs(a.w - b.w) < 0.03 && Math.abs(a.h - b.h) < 0.03;
+  function measureView(now) {
     probeCtx.drawImage(video, 0, 0, probe.width, probe.height);
     const data = probeCtx.getImageData(0, 0, probe.width, probe.height).data;
     const lum = new Uint8Array(probe.width * probe.height);
     for (let i = 0; i < lum.length; i++) lum[i] = ((data[i * 4] || 0) + (data[i * 4 + 1] || 0) + (data[i * 4 + 2] || 0)) / 3;
-    view = contentRect(lum, probe.width, probe.height) || { x: 0, y: 0, w: 1, h: 1 };
+    // A window share shows only the QuickTime window: no Mac notification in it.
+    covered = surface === 'monitor' && viewTaken && barIntrusion(lum, probe.width, probe.height, view, bar);
+    if (covered) { candidate = null; return; }
+    if (viewTaken && now - measured < 2000) return;
+    measured = now;
+    const found = contentRect(lum, probe.width, probe.height) || FULL;
+    if (viewTaken && sameRect(found, view)) { candidate = null; return; }
+    if (!viewTaken || (candidate && sameRect(candidate, found))) { view = found; bar = barLevel(lum, probe.width, probe.height); viewTaken = true; candidate = null; }
+    else candidate = found;
   }
   // adviceId counts the boards and Treasures: each is said once per text.
   let adviceId = 0;
@@ -230,6 +272,10 @@
   let gate = new FrameGate();
   let stream = null, timer = null, busy = false, session = 0, adviceVersion = -1, advicePoll = null, lastSignature = '';
   let activeRead = null;
+  // A doubtful read held back (doubtfulRead): since when, and when to read
+  // the screen again. Past DOUBT_WAIT it is loaded as before, to be fixed.
+  const DOUBT_WAIT = 6000, DOUBT_RETRY = 1200;
+  let doubtSince = 0, retry = null;
   // Treasure guess: a board read since the last Treasure, the last move advised.
   // treasureOpen: a Treasure (or the eye view behind it) seen since the last
   // board with the Treasure closed.
@@ -246,6 +292,7 @@
     if (stream) stream.getTracks().forEach((track) => track.stop());
     stream = null; video.srcObject = null;
     boardSeen = false; treasureGuessed = false; lastAction = null; provisional = false; treasureOpen = false;
+    doubtSince = 0; retry = null; covered = false; wasCovered = false;
     $('qt-start').disabled = false; $('qt-stop').disabled = true; $('qt-rescan').disabled = true;
     $('qt-reload').hidden = !lane.busy;
     video.hidden = true; $('qt-empty').hidden = false; $('qt-live').hidden = true; frame('');
@@ -348,8 +395,25 @@
       }
       if (!current() || !read) return;
       if (read.ok) {
-        activeRead = read;
         const seen = A.quickTimeState && A.quickTimeState();
+        // A new screen with doubts: maybe a notification over the iPad's
+        // picture. Read it again shortly; when the banner goes, the clean
+        // screen replaces it. Only a doubt that stays is loaded to be fixed.
+        const sameScreen = !!seen && !!seen.signature && seen.signature === lastSignature;
+        if (!sameScreen && doubtfulRead(read, seen)) {
+          const t = performance.now();
+          if (!doubtSince) doubtSince = t;
+          if (t - doubtSince < DOUBT_WAIT) {
+            record('doubt', { version, readiness: boardReadiness(read, seen), waited: Math.round(t - doubtSince) });
+            retry = { at: t + DOUBT_RETRY, restless };
+            frame('Waiting…');
+            status('Part of the game may be covered (a notification?): reading again in a moment…');
+            advice('');
+            return;
+          }
+        }
+        doubtSince = 0;
+        activeRead = read;
         // Load an actionable read for correction, but never turn a modal or an
         // unknown action row into a patrol. Manual Recheck can recover advice.
         if (seen && (seen.controls || read.statusView)) {
@@ -383,7 +447,7 @@
         if (read.statusView) { boardSeen = false; treasureOpen = true; } else { boardSeen = true; treasureGuessed = false; treasureOpen = false; }
         status(boardReadiness(read, seen)); advice('The screen needs checking: advice hidden.'); return;
       }
-      activeRead = null;
+      activeRead = null; doubtSince = 0;
       // Give the player useful routing immediately, before slow card-name OCR.
       advice('If the Warden’s Treasure is open, press View Prison Status (the eye) and keep the board open.');
       const treasure = A.readTreasure ? await stage('No board: checking for the Warden’s Treasure…', () => A.readTreasure(bitmap), 6000, live) : { ok: false };
@@ -453,7 +517,22 @@
     // Exclude window borders, the iPad home indicator and QuickTime's floating
     // recording toolbar. Recognition still receives the complete game frame.
     const now = performance.now();
-    if (now - measured > 2000) { measured = now; measureView(); }
+    measureView(now);
+    if (covered) {
+      if (!wasCovered) {
+        wasCovered = true; retry = null;
+        record('covered', {});
+        clearAdvice(); frame('Covered…');
+        status('A notification or window covers the screen: waiting for it to go…');
+      }
+      return;
+    }
+    if (wasCovered) {
+      // The screen behind it is read afresh; the same board keeps its fixes.
+      wasCovered = false;
+      gate = new FrameGate(); gate.version = Date.now();
+      status('Uncovered: reading the screen again…');
+    }
     const W = video.videoWidth * view.w, H = video.videoHeight * view.h, X = video.videoWidth * view.x, Y = video.videoHeight * view.y;
     const part = (x, y, w, h, dx, dy, dw, dh) => sampleCtx.drawImage(video, X + W * x, Y + H * y, W * w, H * h, dx, dy, dw, dh);
     sampleCtx.clearRect(0, 0, sample.width, sample.height);
@@ -465,10 +544,14 @@
     const data = sampleCtx.getImageData(0, 0, sample.width, sample.height).data;
     for (let i = 0; i < pixels.length; i++) pixels[i] = Math.round(((data[i * 4] || 0) + (data[i * 4 + 1] || 0) + (data[i * 4 + 2] || 0)) / 3);
     const state = gate.update(pixels, now);
-    if (state.changed) { clearAdvice(); if (busy) status('The screen changed. Waiting for the previous reading to end…'); }
+    if (state.changed) { retry = null; clearAdvice(); if (busy) status('The screen changed. Waiting for the previous reading to end…'); }
     if (state.ready && !busy && !lane.busy) {
       if (state.restless) record('restless', { version: state.version });
+      retry = null;
       gate.accept(); recognize(state.version, session, state.restless);
+    } else if (retry && now >= retry.at && !busy && !lane.busy) {
+      const again = retry; retry = null;
+      recognize(gate.version, session, again.restless);
     }
   }
   function startTimer(fn, ms) {
@@ -492,7 +575,7 @@
         chosen.getTracks().forEach((t) => t.stop());
         throw new Error('Pick the QuickTime window, or the Entire Screen with the iPad’s AirPlay picture: a browser tab isn’t used.');
       }
-      view = { x: 0, y: 0, w: 1, h: 1 }; measured = 0;
+      view = FULL; measured = 0; viewTaken = false; candidate = null; covered = false; wasCovered = false; doubtSince = 0; retry = null;
       if (recorder) recorder.start({ surface, settings: track.getSettings() });
       stream = chosen; session++; gate = new FrameGate(); lastSignature = ''; activeRead = null;
       document.documentElement.classList.add('qt-capturing', 'qt-stale');
@@ -519,7 +602,9 @@
   if (params.get('autostart') === '1') connect(true);
   $('qt-stop').addEventListener('click', stop);
   $('qt-reload').addEventListener('click', () => { stop(); location.reload(); });
-  $('qt-rescan').addEventListener('click', () => { record('action', { name: 'read again' }); lastSignature = ''; gate = new FrameGate(); gate.version = Date.now(); clearAdvice(); tick(); });
+  $('qt-rescan').addEventListener('click', () => { record('action', { name: 'read again' }); lastSignature = ''; retry = null;
+    // Asked for by the player: what is read now is loaded, doubts and all.
+    doubtSince = -Infinity; gate = new FrameGate(); gate.version = Date.now(); clearAdvice(); tick(); });
   // A manual file/paste takes precedence; do not race it with captured frames.
   // Its reading shows on the Screenshot tab, so that tab comes up.
   const manual = () => { if (stream) stop(); selectTab('shot'); };

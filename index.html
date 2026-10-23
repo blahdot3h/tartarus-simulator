@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600;700&family=Big+Shoulders+Stencil+Display:wght@600;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="css/style.css?v=20261022a">
+<link rel="stylesheet" href="css/style.css?v=20261022c">
 </head>
 <body>
 <div class="app" id="app">
@@ -31,7 +31,7 @@
         </button>
         <button type="button" class="route" data-route="drill">
           <span class="route-name">Rules drill</span>
-          <span class="route-text">Start from an empty prison: day 1, all 15 cells sealed. Best for a first run.</span>
+          <span class="route-text">Start a run as the game does: day 1, 4 inmates out and the other cells sealed. Best for a first run.</span>
           <span class="route-meta">20 days · practice values</span>
         </button>
         <button type="button" class="route" data-route="markers">
@@ -259,14 +259,14 @@
     </header>
     <div class="sheet-body prose">
       <h3>The ring</h3>
-      <p>Sixteen cells form a ring, numbered clockwise from 01 in the top-left corner: 01 to 06 across the top, 07 to 09 down the right, 10 to 14 back along the bottom and 15 to 16 up the left. Cell 01 is the warden's office. Every run starts there, and nothing is ever held in it, so the other 15 cells hold the prisoners. The lantern marks where the warden stands.</p>
+      <p>Sixteen cells form a ring, numbered clockwise from 01 in the top-left corner: 01 to 06 across the top, 07 to 09 down the right, 10 to 14 back along the bottom and 15 to 16 up the left. Cell 01 is the warden's office. Every run starts there, and nothing is ever held in it, so the other 15 cells hold the prisoners. A run starts with 4 inmates already out on random cells (3 in about 1 run in 20), and the rest sealed. The lantern marks where the warden stands.</p>
 
       <h3>A day on the block</h3>
       <ol class="steps">
-        <li><strong>Patrol.</strong> Each morning offers three destination cells from the next six clockwise from the warden. They glow on the ring and appear as cards under it. A destination can be a locked cell, which opens when the warden arrives, a cell whose inmate you already know, or the warden's office. You can't see inside a locked cell until it opens. You must patrol before anything else.</li>
+        <li><strong>Patrol.</strong> Each morning offers three destination cells from the next six clockwise from the warden. They glow on the ring and appear as cards under it. A destination can be a locked cell, which opens when the warden arrives, a cell whose inmate you already know, or the warden's office, which comes up less often than a cell (about 1 morning in 4 when it's in reach). You can't see inside a locked cell until it opens. You must patrol before anything else.</li>
         <li><strong>The office.</strong> When the warden walks to the office, choose one: <strong>Instigate</strong> puts a new special event on a random cell, behind a locked door or beside an inmate (2 when the board has none), and <strong>Bestow</strong> raises 1 random inmate on the block a tier.</li>
         <li><strong>Consume.</strong> Once a day, after the patrol, and only the inmate in the warden's cell can start it. Double-click a highlighted target to consume it, or click it once to preview the bite and again to confirm. The eater then goes on eating while it has a valid target: after each bite you pick its next meal, even when there's only one, or stop the chain, as the game's Cancel button does. The eater keeps what it gained. The log and the recap under the ring show every bite as icons.</li>
-        <li><strong>Replace.</strong> Once a day, replace the inmate in the warden's cell with a brand-new random one. It can come out stronger or weaker. No other cell's inmate can be replaced. A day has a Replace or a consume, not both: either one uses up the other.</li>
+        <li><strong>Replace.</strong> Once a day, replace the inmate in the warden's cell with a brand-new random one, always of another beast. It can come out stronger or weaker. No other cell's inmate can be replaced. A day has a Replace or a consume, not both: either one uses up the other.</li>
         <li><strong>End the day.</strong> The next morning, prey marks grow, ripe nests hatch, and new destinations are drawn. A recap of the day you just finished appears under the destination cards.</li>
       </ol>
       <p>When an inmate is consumed or sent off, its cell seals again. The next time that door opens, someone new is inside.</p>
@@ -303,7 +303,7 @@
         <dt class="m-event">"Treasure" Hunt</dt>
         <dd>Every locked cell holding a Normal or Magic inmate shows its rarity (a "?" portrait), so the locked doors left dark hold Rare or better. Its card has only Confirm.</dd>
       </dl>
-      <p>Special events (the game calls them Prison Incidents) turn up behind random locked doors, each kind in the pool equally likely, and their badge shows at once. Most runs start with one, and new ones keep appearing: some mornings, after a patrol, and after a Consume or Replace. An event can also wait in an open cell beside its inmate; walking in sets it off.</p>
+      <p>Special events (the game calls them Prison Incidents) turn up on random cells, each kind in the pool equally likely, and their badge shows at once. Most runs start with one behind a locked door. Each event the warden sets off, taken or skipped, is usually followed by a new one (88% of the time, never two): behind a locked door, or in an open cell beside its inmate, where walking in sets it off.</p>
 
       <h3>Markers</h3>
       <dl class="defs">
@@ -578,13 +578,13 @@
   </div>
 </dialog>
 
-<script src="js/engine.js?v=20261022a"></script>
-<script src="js/board.js?v=20261022a"></script>
-<script src="js/sound.js?v=20261022a"></script>
-<script src="js/guide-data.js?v=20261022a"></script>
-<script src="js/tool-combos.js?v=20261022a"></script>
-<script src="js/solver.js?v=20261022a"></script>
-<script src="js/ui.js?v=20261022a"></script>
-<script src="js/update.js?v=20261022a"></script>
+<script src="js/engine.js?v=20261022c"></script>
+<script src="js/board.js?v=20261022c"></script>
+<script src="js/sound.js?v=20261022c"></script>
+<script src="js/guide-data.js?v=20261022c"></script>
+<script src="js/tool-combos.js?v=20261022c"></script>
+<script src="js/solver.js?v=20261022c"></script>
+<script src="js/ui.js?v=20261022c"></script>
+<script src="js/update.js?v=20261022c"></script>
 </body>
 </html>

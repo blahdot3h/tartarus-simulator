@@ -59,14 +59,6 @@
     if (state.checks || (state.checks == null && read.unsure)) return 'Some cells were read with doubt. Fix the board below and press Recheck.';
     return '';
   }
-  // A Treasure without View Prison Status: guess the gift on the last board
-  // read, once per Treasure. Opulence's later picks change the board, so
-  // they still need the eye view. after: what led to the Treasure.
-  function treasurePlan(s) {
-    if (!s || !s.boardSeen || s.guessed) return { use: false };
-    const t = s.lastAction;
-    return { use: true, after: t === 'swap' ? 'swap' : (t === 'devour' || t === 'chain' || t === 'stopchain') ? 'consume' : undefined };
-  }
   // The picture inside the black bars around it: AirPlay on the whole Mac
   // screen shows the iPad's 4:3 in the middle of a wider one. lum: grey
   // levels of a small copy of the frame (w by h). The bars are centred, so a
@@ -143,7 +135,7 @@
     }
   }
   function endText(state) { return state && state.chain ? 'Cancel the consume, then End the day.' : 'Press End.'; }
-  window.TartarusQuickTime = { FrameGate, RecognitionLane, Recorder, barIntrusion, boardReadiness, contentRect, doubtfulRead, endText, treasurePlan };
+  window.TartarusQuickTime = { FrameGate, RecognitionLane, Recorder, barIntrusion, boardReadiness, contentRect, doubtfulRead, endText };
   if (typeof document === 'undefined' || typeof navigator === 'undefined') return;
   const params = new URLSearchParams(location.search);
   const A = window.TartarusAnalyzer;
@@ -276,10 +268,80 @@
   // the screen again. Past DOUBT_WAIT it is loaded as before, to be fixed.
   const DOUBT_WAIT = 6000, DOUBT_RETRY = 1200;
   let doubtSince = 0, retry = null;
-  // Treasure guess: a board read since the last Treasure, the last move advised.
+  // The instruments survey: the run's instruments aren't known, so the
+  // player taps each one on the iPad and its tip's name is read as text
+  // (the user, 2026-10-24: the panel icons read by their art were wrong).
+  // slots: the panel's count; known: the run's instruments the analyzer
+  // has; got: the ones read so far; fails: tips whose name wasn't read in
+  // a row. The survey ends when the set is complete, or after SURVEY_FAILS
+  // unreadable tips (then the player sets them by hand, as before).
+  const SURVEY_FAILS = 3;
+  let survey = null;
+  function surveyPrompt() {
+    const wanted = survey.slots - survey.known.length;
+    const k = survey.got.length + 1;
+    if (!survey.known.length) return `Tap instrument ${k} of ${survey.slots} on the iPad${k === 1 ? ', the leftmost' : ''}, and keep its tip open.`;
+    return wanted > 1 ? `Tap the new instrument ${k} of ${wanted} on the panel, and keep its tip open.` : 'Tap the new instrument on the panel (the rightmost), and keep its tip open.';
+  }
+  // Whether a survey can start on the board as read: the analyzer asks
+  // about the instruments, and the survey is on hand.
+  const surveyReady = (state) => !!(state && state.toolsToConfirm && A.toolSurvey && A.readToolTip && A.setTools);
+  function startSurvey() {
+    const t = A.toolSurvey && A.readToolTip && A.setTools ? A.toolSurvey() : null;
+    if (!t || !t.needed) return false;
+    // Instruments the analyzer took from the icons' art but never had
+    // confirmed aren't known: that art reading is what the tips replace
+    // (the Filthy Claws read as the Skewered Rat Heads, sure of it).
+    const known = t.locked ? t.known : [];
+    if (!(t.slots > known.length)) return false;
+    survey = { slots: t.slots, known, got: [], fails: 0 };
+    record('survey', { start: true, slots: t.slots, known: t.known });
+    document.documentElement.classList.add('qt-stale'); adviceVersion = -1; clearInterval(advicePoll); advicePoll = null;
+    const prompt = surveyPrompt();
+    status(prompt); advice('Advice hidden until the instruments are read.'); announce(prompt);
+    return true;
+  }
+  // A tip read while the survey is on. Returns true when the survey took the
+  // frame (nothing else is read from it).
+  function surveyTip(tip, version, mine, restless) {
+    if (!tip || !tip.ok) {
+      // No tip on the screen: the board, or another screen (a Treasure,
+      // an offer), which is read as usual.
+      if (tip && tip.reason === 'no tip') return false;
+      survey.fails++;
+      record('survey', { unreadable: tip ? tip.reason : 'no answer', fails: survey.fails });
+      if (survey.fails < SURVEY_FAILS) { status(`The tip’s name couldn’t be read: tap it again, or the next instrument.`); return true; }
+      survey = null;
+      status('The tips couldn’t be read. Set the instruments below and press These are right, then Recheck.');
+      announce('The instruments need setting by hand on the Mac.');
+      return true;
+    }
+    survey.fails = 0;
+    if (survey.known.includes(tip.id) || survey.got.includes(tip.id)) { status(surveyPrompt()); return true; }
+    survey.got.push(tip.id);
+    record('survey', { read: tip.id, name: tip.name });
+    if (survey.known.length + survey.got.length < survey.slots) {
+      const prompt = surveyPrompt();
+      status(`${tip.name} read. ${prompt}`); announce(prompt);
+      return true;
+    }
+    const ids = survey.known.concat(survey.got);
+    const names = survey.got.map((id) => (T && T.toolName ? T.toolName(id) : id));
+    survey = null;
+    const asked = A.setTools(ids);
+    record('survey', { set: ids });
+    lastSignature = '';
+    announce(`Instruments set: ${names.join(', ')}.`);
+    status(asked ? `Instruments read from their tips: ${names.join(', ')}.` : 'Instruments set. Check the settings below and press Recheck.');
+    if (asked) showRecommendation(restless ? null : version, mine);
+    else advice('Advice hidden until the board is checked.');
+    return true;
+  }
   // treasureOpen: a Treasure (or the eye view behind it) seen since the last
-  // board with the Treasure closed.
-  let boardSeen = false, treasureGuessed = false, lastAction = null, provisional = false, treasureOpen = false;
+  // board with the Treasure closed. A gift is never guessed on the board
+  // before the Treasure (the user, 2026-10-24: the board after a Rainbow is
+  // another board, and the guess was wrong): the eye view is asked for.
+  let treasureOpen = false;
   const lane = new RecognitionLane();
   function clearAdvice() { document.documentElement.classList.add('qt-stale'); adviceVersion = -1; clearInterval(advicePoll); advicePoll = null; advice(''); frame('Screen changing…'); }
   function stop() {
@@ -291,8 +353,8 @@
     try { if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel(); } catch (e) { /* no voice */ } spoken = '';
     if (stream) stream.getTracks().forEach((track) => track.stop());
     stream = null; video.srcObject = null;
-    boardSeen = false; treasureGuessed = false; lastAction = null; provisional = false; treasureOpen = false;
-    doubtSince = 0; retry = null; covered = false; wasCovered = false;
+    treasureOpen = false;
+    doubtSince = 0; retry = null; covered = false; wasCovered = false; survey = null;
     $('qt-start').disabled = false; $('qt-stop').disabled = true; $('qt-rescan').disabled = true;
     $('qt-reload').hidden = !lane.busy;
     video.hidden = true; $('qt-empty').hidden = false; $('qt-live').hidden = true; frame('');
@@ -333,14 +395,10 @@
       const text = moveText(rec);
       if (text) {
         document.documentElement.classList.remove('qt-stale');
-        if (provisional) { advice(`Provisional: ${text} For exact advice, open View Prison Status.`); announce(text); }
-        else {
-          advice(`${full ? 'Advice' : 'Quick advice'}: ${text}`);
-          if (full) announce(text);
-          if (rec.action.type !== 'choose') lastAction = rec.action.type;
-          // A Recheck after a fix clears the problem the last read reported.
-          if (activeRead && adviceVersion !== version) status('Board read.');
-        }
+        advice(`${full ? 'Advice' : 'Quick advice'}: ${text}`);
+        if (full) announce(text);
+        // A Recheck after a fix clears the problem the last read reported.
+        if (activeRead && adviceVersion !== version) status('Board read.');
         adviceVersion = version; frame('');
       }
       else { document.documentElement.classList.add('qt-stale'); adviceVersion = -1; advice('Still working it out. If you fixed the board, press Recheck.'); }
@@ -351,7 +409,6 @@
   // read stays good while the frame keeps changing, and its advice too.
   async function recognize(version, mine, restless) {
     busy = true;
-    provisional = false;
     frame('Reading…');
     status('Reading the screen…');
     let bitmap;
@@ -388,6 +445,11 @@
         record('frame', pictureOf(capture).then((picture) => Object.assign(info, picture)));
       }
       const started = performance.now();
+      if (survey) {
+        const tip = await stage('Looking for the instrument’s tip…', () => A.readToolTip(bitmap), 8000, live);
+        if (!live()) return;
+        if (survey && surveyTip(tip, version, mine, restless)) return;
+      }
       const read = await stage('Reading the board and the action buttons…', () => A.readFrame(bitmap), 8000);
       if (recorder) {
         const seen = read && read.ok && A.quickTimeState ? A.quickTimeState() : null;
@@ -400,7 +462,8 @@
         // picture. Read it again shortly; when the banner goes, the clean
         // screen replaces it. Only a doubt that stays is loaded to be fixed.
         const sameScreen = !!seen && !!seen.signature && seen.signature === lastSignature;
-        if (!sameScreen && doubtfulRead(read, seen)) {
+        const asked = seen && surveyReady(seen) && A.toolSurvey && !A.toolSurvey().locked ? Object.assign({}, seen, { toolsToConfirm: '' }) : seen;
+        if (!sameScreen && doubtfulRead(read, asked)) {
           const t = performance.now();
           if (!doubtSince) doubtSince = t;
           if (t - doubtSince < DOUBT_WAIT) {
@@ -425,12 +488,14 @@
             adviceId++;
             A.useReading();
             lastSignature = seen.signature || '';
-            if (!read.statusView) lastAction = null;
           }
-          if (read.statusView) { boardSeen = false; treasureOpen = true; } else { treasureOpen = false; if (!same) { boardSeen = true; treasureGuessed = false; } }
+          treasureOpen = !!read.statusView;
           const state = A.quickTimeState && A.quickTimeState();
           const problem = boardReadiness(read, state);
           if (problem) {
+            if (state.toolsToConfirm && survey) { status(surveyPrompt()); return; }
+            if (state.toolsToConfirm && startSurvey()) return;
+            survey = null;
             status(problem); advice('Check the reading below: advice hidden.'); announce('Check the board on the Mac: the reading needs a fix.');
             showRecommendation(restless ? null : version, mine); return;
           }
@@ -444,10 +509,10 @@
           status(same ? 'Same board: no new check needed.' : read.statusView ? 'Fresh board behind the Treasure read.' : 'Board read. Check the instruments and objective below.');
           showRecommendation(restless ? null : version, mine); return;
         }
-        if (read.statusView) { boardSeen = false; treasureOpen = true; } else { boardSeen = true; treasureGuessed = false; treasureOpen = false; }
+        treasureOpen = !!read.statusView;
         status(boardReadiness(read, seen)); advice('The screen needs checking: advice hidden.'); return;
       }
-      activeRead = null; doubtSince = 0;
+      activeRead = null; doubtSince = 0; survey = null;
       // Give the player useful routing immediately, before slow card-name OCR.
       advice('If the Warden’s Treasure is open, press View Prison Status (the eye) and keep the board open.');
       const treasure = A.readTreasure ? await stage('No board: checking for the Warden’s Treasure…', () => A.readTreasure(bitmap), 6000, live) : { ok: false };
@@ -455,33 +520,24 @@
       // Its advice goes with the frame shown now: an animated overlay has
       // moved on a frame or two since the picture was taken.
       if (treasure.ok) {
-        // The same Treasure, still open, with one pick: its advice holds,
-        // the exact one after View Prison Status or the guess before it.
-        // Opulence's offers can follow one another without the board
-        // showing, so each of them still needs the eye view.
+        // The same Treasure, still open, with one pick, after View Prison
+        // Status: its exact advice holds. Opulence's offers can follow one
+        // another without the board showing, so each of them still needs
+        // the eye view.
         const gift = A.giftState && A.giftState();
-        if (treasureOpen && gift && gift.open && !gift.wait && !gift.opulence && !gift.picked && (gift.seen || treasureGuessed)) {
-          provisional = !gift.seen;
-          if (gift.seen && A.useTreasure) A.useTreasure();
-          status(gift.seen ? 'Warden’s Treasure: advice on the board seen behind it.' : 'Warden’s Treasure: advice on the last board read. For exact advice, open View Prison Status.');
+        if (treasureOpen && gift && gift.open && !gift.wait && !gift.opulence && !gift.picked && gift.seen) {
+          if (A.useTreasure) A.useTreasure();
+          status('Warden’s Treasure: advice on the board seen behind it.');
           showRecommendation(restless ? null : gate.version, mine); return;
         }
-        // A board read before this Treasure isn't the board after it.
+        // A board read before this Treasure isn't the board after it (the
+        // Rainbow left for the vault), so no gift is advised on it. Without
+        // the game log, a second offer can mean either returning from the
+        // eye view or a newly confirmed Opulence pick. Never reuse the
+        // previous gift board/count here: advise only on a fresh eye view.
         lastSignature = '';
         if (!treasureOpen) adviceId++;
         treasureOpen = true;
-        const plan = treasurePlan({ boardSeen, guessed: treasureGuessed, lastAction });
-        if (plan.use && A.treasureGuess) {
-          treasureGuessed = true; boardSeen = false;
-          if (A.treasureGuess(plan.after)) {
-            provisional = true;
-            status('Warden’s Treasure: advice on the last board read. For exact advice, open View Prison Status.');
-            showRecommendation(restless ? null : gate.version, mine); return;
-          }
-        }
-        // Without the game log, a second offer can mean either returning
-        // from the eye view or a newly confirmed Opulence pick. Never reuse
-        // the previous gift board/count here: advise only on a fresh eye view.
         document.documentElement.classList.add('qt-stale');
         status('Warden’s Treasure: for EACH pick, open View Prison Status (the eye) and keep the board open.');
         announce('Warden’s Treasure: open View Prison Status (the eye) for the advice.');
@@ -602,7 +658,7 @@
   if (params.get('autostart') === '1') connect(true);
   $('qt-stop').addEventListener('click', stop);
   $('qt-reload').addEventListener('click', () => { stop(); location.reload(); });
-  $('qt-rescan').addEventListener('click', () => { record('action', { name: 'read again' }); lastSignature = ''; retry = null;
+  $('qt-rescan').addEventListener('click', () => { record('action', { name: 'read again' }); lastSignature = ''; retry = null; survey = null;
     // Asked for by the player: what is read now is loaded, doubts and all.
     doubtSince = -Infinity; gate = new FrameGate(); gate.version = Date.now(); clearAdvice(); tick(); });
   // A manual file/paste takes precedence; do not race it with captured frames.

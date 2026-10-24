@@ -112,7 +112,10 @@ function bridgeHarness(options = {}) {
   // The reader's side: the reading of the last board, and whether it is the
   // one loaded (the player's fixes live in `fixed`, as the analyzer's flags).
   const rd = { loaded: false, checks: 0, fixed: 0, move: 'patrol' };
-  const calls = { useReading: 0, ask: 0, guesses: [] };
+  const calls = { useReading: 0, ask: 0, guesses: [], tipReads: 0, setTools: [] };
+  // The instruments: the panel's slots in the last board read, and the run's
+  // instruments as the analyzer has them (unknown until set or confirmed).
+  const tools = { slots: 0, known: [], toConfirm: '' };
   const recommendation = () => {
     if (!state.isFresh || state.model.treasureWait) return null;
     if (state.model.step === 'choice') return { action: { type: 'choose', id: 'wine' } };
@@ -124,22 +127,29 @@ function bridgeHarness(options = {}) {
       if (screen === 'treasure') return { ok: false };
       if (screen === 'view') { rd.loaded = false; rd.sig = 'view'; rd.checks = 0; return { ok: true, statusView: true }; }
       rd.loaded = false; rd.sig = screen.board; rd.checks = screen.checks || 0; rd.move = screen.move || 'patrol';
+      if (screen.tools) {
+        tools.slots = screen.tools;
+        // Icons read sure of themselves fill the unknown run's instruments, unconfirmed.
+        if (!tools.locked && screen.sure) tools.known = screen.sure.slice();
+        if (tools.known.length < screen.tools || !tools.locked) tools.toConfirm = `The analyzer doesn’t know this run’s instruments yet (${screen.tools} on the panel).`;
+      }
       return { ok: true };
     },
+    // An instrument's tip on the screen: its name read as text.
+    async readToolTip() { calls.tipReads++; if (!screen.tip) return { ok: false, reason: 'no tip' }; return screen.tip === 'unreadable' ? { ok: false, reason: 'name not read' } : { ok: true, id: screen.tip, name: `Tool ${screen.tip}` }; },
+    toolSurvey: () => ({ slots: tools.slots, known: tools.known.slice(), locked: !!tools.locked, needed: !!tools.toConfirm }),
+    // Array.from: an array of this realm, for deepEqual (the ids come from the page's).
+    setTools(ids) { calls.setTools.push(Array.from(ids)); tools.known = Array.from(ids); tools.locked = true; tools.toConfirm = ''; return state.ask(); },
     async readTreasure() { if (options.animate) options.animate(); return { ok: true }; },
     async readPick() { throw new Error('Treasure must not wait for three-card OCR'); },
     useReading() { calls.useReading++; state.model = board(); rd.loaded = true; rd.everLoaded = true; rd.fixed = rd.checks; state.isFresh = false; },
     keepReading() { if (!rd.everLoaded && !rd.loaded) return false; rd.loaded = true; return true; },
     useTreasure: state.useTreasure,
-    treasureGuess(after) {
-      calls.guesses.push(after);
-      state.useTreasure(after);
-      if (!state.model.treasureWait) return false;
-      state.model.treasureWait = false; state.changed();
-      return state.ask();
-    },
+    // The user, 2026-10-24: a gift is never guessed on the board before the
+    // Treasure; the eye view is asked for instead.
+    treasureGuess() { throw new Error('A Treasure must not be guessed on the last board: ask for View Prison Status'); },
     giftState: () => ({ open: state.model.step === 'choice' && state.model.choice.kind === 'gift', wait: !!state.model.treasureWait, seen: !!state.model.treasureSeen, picked: false, opulence: state.model.startEvent === 'opulence' }),
-    quickTimeState: () => (screen === 'treasure' ? null : { controls: screen !== 'view', daysRead: true, wardenRead: true, checks: rd.loaded ? rd.fixed : rd.checks, step: state.model.step, signature: rd.sig }),
+    quickTimeState: () => (screen === 'treasure' ? null : { controls: screen !== 'view', daysRead: true, wardenRead: true, checks: rd.loaded ? rd.fixed : rd.checks, step: state.model.step, signature: rd.sig, toolsToConfirm: tools.toConfirm }),
     ask: () => { calls.ask++; return state.ask(); }, recommendation, quickRecommendation: recommendation,
     setGameLang() {},
   };
@@ -256,32 +266,27 @@ test('the same board read again keeps the fixes made on it', async () => {
   assert.equal(bridge.calls.useReading, 2);
   bridge.stop();
 });
-test('a provisional Treasure guess survives the overlay being read again', async () => {
-  const bridge = bridgeHarness();
+// The user, 2026-10-24: the board after a Rainbow isn't the board before it,
+// so a gift advised on the last board read was the wrong one. A Treasure
+// right after a board asks for the eye view like any other.
+test('a Treasure right after a board read asks for the eye view, and advises nothing', async () => {
+  const bridge = bridgeHarness({ storage: { 'qt-speak': '1' } });
   await bridge.start();
   await bridge.screen({ board: 'A' });
   assert.match(bridge.get('qt-advice'), /Go to cell 04/);
   await bridge.screen(false);
-  assert.match(bridge.get('qt-advice'), /Provisional: Take Crimson Wine/);
+  assert.match(bridge.get('qt-advice'), /fresh board/);
+  assert.doesNotMatch(bridge.get('qt-advice'), /Crimson Wine|Provisional/);
+  assert.match(bridge.get('qt-status'), /View Prison Status/);
+  assert.equal(bridge.classes.has('qt-stale'), true);
   await bridge.screen(false);
-  assert.match(bridge.get('qt-advice'), /Provisional: Take Crimson Wine/);
-  assert.equal(bridge.calls.guesses.length, 1);
-  // The Treasure closed on a new board: the next one is a new Treasure.
-  await bridge.screen({ board: 'B' });
+  assert.match(bridge.get('qt-advice'), /fresh board/);
+  assert.equal(bridge.spoken.filter((t) => /View Prison Status/.test(t)).length, 1, `said: ${JSON.stringify(bridge.spoken)}`);
+  // The eye view gives the exact advice, which holds back on the overlay.
+  await bridge.screen(true);
+  assert.match(bridge.get('qt-advice'), /Advice: Take Crimson Wine/);
   await bridge.screen(false);
-  assert.equal(bridge.calls.guesses.length, 2);
-  bridge.stop();
-});
-test('the Treasure guess uses what was advised on the last board, not an older one', async () => {
-  const bridge = bridgeHarness();
-  await bridge.start();
-  await bridge.screen({ board: 'A', move: 'swap' });
-  assert.match(bridge.get('qt-advice'), /Replace/);
-  // Board B is read but its advice stays hidden (cells to check).
-  await bridge.screen({ board: 'B', checks: 1 });
-  await bridge.wait(7000);
-  await bridge.screen(false);
-  assert.deepEqual(bridge.calls.guesses, [undefined]);
+  assert.match(bridge.get('qt-advice'), /Advice: Take Crimson Wine/);
   bridge.stop();
 });
 test('Opulence gift advice requires a manually supplied remaining-pick count', () => {
@@ -299,23 +304,40 @@ test('default recognition timers retain the browser global receiver', async () =
   const lane = new ctx.window.TartarusQuickTime.RecognitionLane();
   assert.equal((await lane.run(() => Promise.resolve('read'), 100, () => {})).value, 'read');
 });
-function plan(s) {
-  const context = { window: {}, URLSearchParams, location: { search: '' } };
-  vm.runInNewContext(fs.readFileSync(sourcePath, 'utf8'), context);
-  return context.window.TartarusQuickTime.treasurePlan(s);
-}
-test('treasure after a fresh board read is guessed on that board', () => {
-  assert.equal(plan({ boardSeen: true, guessed: false, lastAction: 'patrol' }).use, true);
-  assert.equal(plan({ boardSeen: true, guessed: false, lastAction: 'patrol' }).after, undefined);
+test('a notification over the board is read again, not loaded: the board behind it comes back', async () => {
+  const bridge = bridgeHarness({ storage: { 'qt-speak': '1' } });
+  await bridge.start();
+  await bridge.screen({ board: 'A' });
+  assert.equal(bridge.calls.useReading, 1);
+  // A banner over the countdown or the instruments: the read has doubts.
+  await bridge.screen({ board: 'covered', checks: 1 });
+  assert.equal(bridge.calls.useReading, 1, 'the misread is not loaded');
+  assert.match(bridge.get('qt-status'), /covered/);
+  await bridge.wait(2000);
+  assert.equal(bridge.calls.useReading, 1, 'still held while it may be a notification');
+  // The banner goes: the same board as before, its advice back, said once.
+  await bridge.screen({ board: 'A' });
+  assert.equal(bridge.calls.useReading, 1);
+  assert.match(bridge.get('qt-advice'), /Advice: Go to cell 04/);
+  assert.deepEqual(bridge.spoken, ['Go to cell 4.']);
+  bridge.stop();
 });
-test('treasure guess carries what led to it', () => {
-  assert.equal(plan({ boardSeen: true, guessed: false, lastAction: 'swap' }).after, 'swap');
-  for (const t of ['devour', 'chain', 'stopchain']) assert.equal(plan({ boardSeen: true, guessed: false, lastAction: t }).after, 'consume');
+test('Read again loads a doubtful screen at once', async () => {
+  const bridge = bridgeHarness();
+  await bridge.start();
+  await bridge.screen({ board: 'A', checks: 1 });
+  assert.equal(bridge.calls.useReading, 0);
+  bridge.elements.get('qt-rescan').listeners.click();
+  await bridge.wait(1500);
+  assert.equal(bridge.calls.useReading, 1);
+  bridge.stop();
 });
-test('no treasure guess without a board, or twice for one treasure (Opulence)', () => {
-  assert.equal(plan({ boardSeen: false, guessed: false, lastAction: 'swap' }).use, false);
-  assert.equal(plan({ boardSeen: true, guessed: true, lastAction: 'swap' }).use, false);
-  assert.equal(plan(null).use, false);
+test('the whole Mac screen (AirPlay) is read like a window when nothing covers it', async () => {
+  const bridge = bridgeHarness({ surface: 'monitor' });
+  await bridge.start();
+  await bridge.screen({ board: 'A' });
+  assert.match(bridge.get('qt-advice'), /Advice: Go to cell 04/);
+  bridge.stop();
 });
 test('a notification over the board is read again, not loaded: the board behind it comes back', async () => {
   const bridge = bridgeHarness({ storage: { 'qt-speak': '1' } });
@@ -404,8 +426,80 @@ test('each move is said once, not again when the same board is read again', asyn
   assert.deepEqual(bridge.spoken, ['Go to cell 4.']);
   await bridge.screen({ board: 'B' });
   assert.deepEqual(bridge.spoken, ['Go to cell 4.', 'Go to cell 4.']);
+  // A Treasure: the eye view is asked for, no gift is guessed aloud.
   await bridge.screen(false);
-  assert.equal(bridge.spoken[2], 'Take Crimson Wine.');
+  assert.match(bridge.spoken[2], /View Prison Status/);
+  bridge.stop();
+});
+
+// The user, 2026-10-24: the panel's icons read by their art were wrong
+// (the Filthy Claws read as the Skewered Rat Heads, sure of it). When the
+// run's instruments aren't known, the player taps each one on the iPad and
+// its tip's name is read as text, then the set is taken as confirmed.
+test('unknown instruments: each is tapped and its name read, then the set is taken', async () => {
+  const bridge = bridgeHarness({ storage: { 'qt-speak': '1' } });
+  await bridge.start();
+  // The icons read the Claws as the Skewered Rat Heads, sure of it: that
+  // reading is not trusted, every slot is asked for. No 6 s doubt wait
+  // first: the instruments are unknown, not hidden by a notification.
+  await bridge.screen({ board: 'A', tools: 2, sure: ['skewer'] });
+  assert.match(bridge.get('qt-status'), /Tap instrument 1 of 2/);
+  assert.match(bridge.get('qt-advice'), /advice hidden/i);
+  assert.ok(bridge.spoken.some((t) => /Tap instrument 1 of 2/.test(t)), `said: ${JSON.stringify(bridge.spoken)}`);
+  // The first tip opens; its name is read. The same tip, still open, is not read twice.
+  await bridge.screen({ board: 'A', tools: 2, tip: 'coin' });
+  assert.match(bridge.get('qt-status'), /Tap instrument 2 of 2/);
+  await bridge.screen({ board: 'A', tools: 2, tip: 'coin' });
+  assert.match(bridge.get('qt-status'), /Tap instrument 2 of 2/);
+  // The tip closed for a moment: the board is read as usual, the survey goes on.
+  await bridge.screen({ board: 'A', tools: 2 });
+  assert.match(bridge.get('qt-status'), /Tap instrument 2 of 2/);
+  assert.deepEqual(bridge.calls.setTools, []);
+  // The second tip: the set is complete and taken, and the advice comes at once.
+  await bridge.screen({ board: 'A', tools: 2, tip: 'claws' });
+  assert.deepEqual(bridge.calls.setTools, [['coin', 'claws']]);
+  assert.ok(bridge.spoken.some((t) => /Instruments set/.test(t)), `said: ${JSON.stringify(bridge.spoken)}`);
+  assert.match(bridge.get('qt-advice'), /Advice: Go to cell 04/);
+  // The tip closed: the board as before, with advice.
+  await bridge.screen({ board: 'A', tools: 2 });
+  assert.match(bridge.get('qt-advice'), /Advice: Go to cell 04/);
+  bridge.stop();
+});
+test('a tip whose name can\'t be read is asked for again, then the player is asked to set the instruments by hand', async () => {
+  const bridge = bridgeHarness();
+  await bridge.start();
+  await bridge.screen({ board: 'A', tools: 1 });
+  assert.match(bridge.get('qt-status'), /Tap instrument 1 of 1/);
+  await bridge.screen({ board: 'A', tools: 1, tip: 'unreadable' });
+  assert.match(bridge.get('qt-status'), /tap it again/i);
+  await bridge.screen({ board: 'A', tools: 1, tip: 'unreadable' });
+  assert.match(bridge.get('qt-status'), /tap it again/i);
+  await bridge.screen({ board: 'A', tools: 1, tip: 'unreadable' });
+  assert.match(bridge.get('qt-status'), /These are right/);
+  assert.deepEqual(bridge.calls.setTools, []);
+  bridge.stop();
+});
+test('known instruments are never asked for; only a new one on the panel is', async () => {
+  const bridge = bridgeHarness();
+  await bridge.start();
+  await bridge.screen({ board: 'A', tools: 1 });
+  assert.match(bridge.get('qt-status'), /Tap instrument 1 of 1/);
+  // A Treasure in the middle of the survey is read as usual (the eye view asked for).
+  await bridge.screen(false);
+  assert.match(bridge.get('qt-status'), /View Prison Status/);
+  await bridge.screen({ board: 'A', tools: 1 });
+  assert.match(bridge.get('qt-status'), /Tap instrument 1 of 1/);
+  await bridge.screen({ board: 'A', tools: 1, tip: 'coin' });
+  assert.deepEqual(bridge.calls.setTools, [['coin']]);
+  await bridge.screen({ board: 'B', tools: 1 });
+  assert.match(bridge.get('qt-advice'), /Advice: Go to cell 04/);
+  // A third day: the panel shows one more than the run's locked set. That
+  // may be a notification over the panel, so the doubt wait comes first.
+  await bridge.screen({ board: 'C', tools: 2 });
+  await bridge.wait(7000);
+  assert.match(bridge.get('qt-status'), /Tap the new instrument/);
+  await bridge.screen({ board: 'C', tools: 2, tip: 'claws' });
+  assert.deepEqual(bridge.calls.setTools, [['coin'], ['coin', 'claws']]);
   bridge.stop();
 });
 
@@ -489,15 +583,15 @@ test('without ?record=1, or away from the local site, nothing is recorded', asyn
 
 // Regression guard (2026-10-22 live run): the Warden's Treasure overlay is
 // animated, so the frame changed during every Treasure check and the check
-// was dropped: no eye instruction and no guess.
-test('an animated Treasure overlay still gets its guess on the last board', async () => {
+// was dropped: no eye instruction at all.
+test('an animated Treasure overlay after a board still asks for the eye view', async () => {
   const bridge = bridgeHarness({ animated: true, storage: { 'qt-speak': '1' } });
   await bridge.start();
   await bridge.screen({ board: 'A' });
   await bridge.screen(false);
   await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(bridge.calls.guesses, [undefined]);
-  assert.ok(bridge.spoken.includes('Take Crimson Wine.'), 'the guess is said');
+  assert.ok(bridge.spoken.some((t) => /View Prison Status/.test(t)), `said: ${JSON.stringify(bridge.spoken)}`);
+  assert.ok(!bridge.spoken.includes('Take Crimson Wine.'), 'no guess is said');
   bridge.stop();
 });
 test('an animated Treasure with no board seen says to open the eye, once', async () => {

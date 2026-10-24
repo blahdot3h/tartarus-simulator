@@ -1875,7 +1875,7 @@
       try {
         reader.worker = new Worker(`js/scan-worker.js${SCRIPT_QUERY}`);
         reader.worker.onmessage = (e) => {
-          if (e.data.kind === 'pick' || e.data.kind === 'objective') {
+          if (e.data.kind === 'pick' || e.data.kind === 'objective' || e.data.kind === 'tip') {
             const answer = reader.picks.get(e.data.id);
             reader.picks.delete(e.data.id);
             if (answer) answer(e.data.result, e.data.error);
@@ -2271,6 +2271,62 @@
     });
   }
 
+  // An instrument's tip on the screen (tapped on the iPad, or pointed at):
+  // the flat grey card right of its icon, its name on the first line. The
+  // name is read as text and matched to an instrument, as an offer card's
+  // is, in place of the panel icon's art (the user, 2026-10-24: the Filthy
+  // Claws' icon read as the Skewered Rat Heads, sure of it). Answers
+  // { ok, id, name }, or { ok: false, reason }: 'no tip' when the screen
+  // shows none, else why its name wasn't read.
+  function readToolTip(source) {
+    const scale = Math.min(1, 2600 / source.width);
+    const w = Math.round(source.width * scale);
+    const h = Math.round(source.height * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(source, 0, 0, w, h);
+    const imageData = ctx.getImageData(0, 0, w, h);
+    const found = new Promise((resolve) => {
+      const done = (result, error) => resolve(error ? { error } : { result });
+      reader.pickId += 1;
+      const id = `tip${reader.pickId}`;
+      if (readerWorker()) {
+        reader.picks.set(id, done);
+        const copy = imageData.data.slice().buffer;
+        reader.worker.postMessage({ id, kind: 'tip', width: w, height: h, buffer: copy }, [copy]);
+        return;
+      }
+      loadReader(true)
+        .then(() => done(window.TartarusScan.findToolTip(imageData)))
+        .catch((e) => done(null, (e && e.message) || 'the screenshot reader could not load'));
+    });
+    return found.then(async ({ result, error }) => {
+      if (error) return { ok: false, reason: error };
+      if (!result) return { ok: false, reason: 'no tip' };
+      const worker = await ocrWorker();
+      if (!worker) return { ok: false, reason: `the text reader couldn’t load (${ocrError || 'it didn’t load'})` };
+      // The name's line, enlarged to about 40 pixels tall when it's
+      // smaller (a 1400-pixel-wide frame has it at 20): the text reader
+      // misses small text.
+      const [x0, y0, x1, y1] = result.title;
+      const z = Math.max(1, 40 / Math.max(1, result.h || y1 - y0));
+      const crop = document.createElement('canvas');
+      crop.width = Math.round((x1 - x0) * z);
+      crop.height = Math.round((y1 - y0) * z);
+      crop.getContext('2d').drawImage(canvas, x0, y0, x1 - x0, y1 - y0, 0, 0, crop.width, crop.height);
+      try {
+        const { data } = await worker.recognize(crop);
+        const name = nameFromText(data.text || '');
+        if (!name) return { ok: false, reason: `the name read as “${(data.text || '').trim().split('\n')[0]}”, which isn’t an instrument`, text: data.text || '' };
+        return { ok: true, id: name.id, name: T.toolName(name.id), text: data.text || '' };
+      } catch (e) {
+        return { ok: false, reason: (e && e.message) || 'the text reader failed' };
+      }
+    });
+  }
+
   // An instrument offer. A fresh run's (fresh, the default): the board
   // behind the offer isn't known yet, so it starts blank, with the
   // player's settings kept. One mid-run (an objective's reward): on the
@@ -2601,6 +2657,23 @@
     return out;
   }
 
+  // A reading's signature for QuickTime mode: what the screen shows (cells,
+  // warden, days, doors, buttons, a meal pick, instruments), without the
+  // reader's measures, which shift a little from frame to frame.
+  function readSignature(r, rd) {
+    const flagsOf = (o) => (o ? Object.keys(o).filter((k) => typeof o[k] === 'boolean' && o[k]).sort() : null);
+    return JSON.stringify({
+      cells: (r.cells || []).map((c) => [c.kind, c.beast || null, c.kind === 'inmate' ? c.tier : null, !!c.nest, c.shown ? c.shown.tier : null, !!c.shown && !!c.shown.scratch, !!c.prey, !!c.event, !!c.emptied]),
+      warden: r.warden ? r.warden.cell : null,
+      days: r.days ? r.days.days : null,
+      doors: r.doors && r.doors.cells ? r.doors.cells.slice().sort((a, b) => a - b) : null,
+      decision: flagsOf(r.decision),
+      chain: r.chain ? (r.chain.targets || []).slice().sort((a, b) => a - b) : null,
+      statusView: !!r.statusView,
+      tools: (rd && rd.tools ? rd.tools : []).map((t) => t.sim || null),
+    });
+  }
+
   function scanToModel(r, base) {
     if (r.chain) return chainToModel(r, base);
     const m = JSON.parse(JSON.stringify(base));
@@ -2631,7 +2704,8 @@
         } else {
           // A door whose rarity shows, as read: a "?" portrait, scratched by
           // the Filthy Claws or not (report 243). A scratch stays while the
-          // door is locked, even if its slashes weren't read.
+          // door is locked, even if its slashes weren't read, unless the
+          // cell behind it was emptied (the reader sees its lit floor).
           // What the player knew of a door that's still locked stays too: a
           // rarity shown (Crow Whispers, or the "Treasure" Hunt's "?"
           // portrait) and the Hunt's Rare or better.
@@ -2640,7 +2714,7 @@
           if (c.shown) {
             m.cells[n] = { kind: c.shown.scratch || (was && was.kind === 'scratch') ? 'scratch' : 'revealed', tier: clamp(c.shown.tier, 0, TOP_TIER), event };
             if (c.shown.conf < 0.6) checks.add(n);
-          } else if (was && (was.kind === 'revealed' || was.kind === 'scratch')) m.cells[n] = { kind: was.kind, tier: was.tier, event };
+          } else if (was && (was.kind === 'revealed' || was.kind === 'scratch') && !c.emptied) m.cells[n] = { kind: was.kind, tier: was.tier, event };
           else if (was && was.kind === 'sealed' && was.atLeast) m.cells[n] = { kind: 'sealed', event, atLeast: was.atLeast };
           else m.cells[n] = { kind: 'sealed', event };
         }
@@ -3397,6 +3471,22 @@
     window.TartarusAnalyzer = {
       readFrame: (bitmap) => new Promise((resolve) => readBitmap(bitmap, { quiet: true, folded: true, onRead: resolve })),
       readPick: (bitmap) => readPick(bitmap),
+      readToolTip: (bitmap) => readToolTip(bitmap),
+      // The instruments survey (QuickTime mode): the panel's slots in the
+      // last reading, the run's instruments the analyzer has, and whether
+      // they need confirming; and the set as read from the tips, confirmed.
+      toolSurvey: () => ({ slots: model.toolsPanel || 0, known: model.tools.slice(), locked: !!model.toolsLocked, needed: !!model.toolsToConfirm }),
+      setTools: (ids) => {
+        model.tools = [...new Set(ids.filter((id) => T.TOOLS[id]))];
+        if (model.step === 'choice' && model.choice && model.choice.kind === 'tool') model.choice = Object.assign({}, model.choice, { options: model.choice.options.filter((t) => !model.tools.includes(t)) });
+        model.toolsToConfirm = '';
+        model.toolsLocked = true;
+        model.toolsSeen = Math.max(model.tools.length, model.toolsPanel || 0);
+        closeTools();
+        changed();
+        renderScan();
+        return ask();
+      },
       usePick: (read, fresh) => usePick(read, fresh),
       readTreasure: (bitmap) => readTreasure(bitmap),
       readObjective: (bitmap) => readObjective(bitmap),
@@ -3419,6 +3509,50 @@
       useReading: () => useScan(),
       ask: () => ask(true),
       recommendation: () => (fresh() && settled() ? recommendation() : null),
+      // Local QuickTime mode may show the strategy's provisional pick while
+      // its short Monte Carlo check finishes. Never return an old board's pick.
+      quickRecommendation: () => (fresh() ? recommendation() : null),
+      quickTimeState: () => {
+        const r = reader.result;
+        const rd = reader.reading;
+        if (!r || !r.ok || !rd) return null;
+        const loaded = reader.loaded === rd;
+        const current = loaded ? model : rd.model;
+        return {
+          chain: !!r.chain,
+          controls: !!(r.chain || r.decision || (r.doors && r.doors.cells && r.doors.cells.length)),
+          daysRead: !!r.days || (loaded && fresh()),
+          wardenRead: !!r.warden || (loaded && fresh()),
+          step: current.step,
+          giftPicksUncertain: current.startEvent === 'opulence' && !gifts.log,
+          toolsToConfirm: current.toolsToConfirm || '',
+          checks: loaded ? flags.size : rd.checks.size,
+          // A new reading whose day isn't the board's or the next: a new run,
+          // or a countdown misread under a notification (which would drop
+          // the run's instruments). QuickTime mode reads it again first.
+          jump: !loaded && !!reader.loaded && !!rd.model && (rd.model.day < model.day || rd.model.day > model.day + 1),
+          // What was seen on the screen, not the model made of it (which
+          // also carries the board before): the same screen read twice
+          // gives the same signature, whatever was fixed on the board since.
+          signature: readSignature(r, rd),
+        };
+      },
+      // The same screen was read again: the board loaded from it stays, with
+      // what the player fixed on it (and its cells still to check).
+      keepReading: () => {
+        if (!reader.reading || !reader.loaded) return false;
+        reader.loaded = reader.reading;
+        return true;
+      },
+      // The Warden's Treasure as the analyzer has it: open (the gift choice),
+      // waiting for the board behind it, or with that board seen.
+      giftState: () => ({
+        open: model.step === 'choice' && !!model.choice && model.choice.kind === 'gift',
+        wait: !!model.treasureWait,
+        seen: !!model.treasureSeen,
+        picked: pickedSinceBoard(),
+        opulence: model.startEvent === 'opulence',
+      }),
       // What the reader made of the last picture, in full (the desktop app's
       // test record keeps it).
       readingSummary: () => (reader.result && reader.image ? readingSummary(true) : ''),

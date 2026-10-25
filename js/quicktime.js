@@ -453,7 +453,7 @@
       const read = await stage('Reading the board and the action buttons…', () => A.readFrame(bitmap), 8000);
       if (recorder) {
         const seen = read && read.ok && A.quickTimeState ? A.quickTimeState() : null;
-        record('reading', { version, ms: Math.round(performance.now() - started), expired: !read, ok: !!(read && read.ok), statusView: !!(read && read.statusView), readiness: read ? boardReadiness(read, seen) : '', signature: seen ? seen.signature || '' : '', summary: A.readingSummary ? A.readingSummary() : '' });
+        record('reading', { version, ms: Math.round(performance.now() - started), expired: !read, ok: !!(read && read.ok), statusView: !!(read && read.statusView), readiness: read ? boardReadiness(read, seen) : '', signature: seen ? seen.signature || '' : '', summary: A.readingSummary ? A.readingSummary() : '', snapshot: A.modelSnapshot ? A.modelSnapshot() : null });
       }
       if (!current() || !read) return;
       if (read.ok) {

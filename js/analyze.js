@@ -2695,6 +2695,12 @@
         notes.push(`The days until the riot read as ${left}, more than any run has: check the day.`);
       }
     } else notes.push('The days until the riot weren’t read: check the day.');
+    // The day going back is a new run: the last run's objective and start
+    // card don't carry over, so the board's corner and the start card's
+    // badge are read for this one (the user's iPad, 2026-10-25: a page
+    // opened mid-run kept Undercurrents and no card from a run that had
+    // ended, on a Prison Walk run with Cage Fight).
+    if (m.day < base.day) Object.assign(m, { objective: 'other', walkTiles: 0, milestone: false, startEvent: 'none' });
     r.cells.forEach((c, n) => {
       if (n === T.OFFICE) return;
       if (c.kind === 'locked') {
@@ -2703,10 +2709,13 @@
           checks.add(n);
         } else {
           // A door whose rarity shows, as read: a "?" portrait, scratched by
-          // the Filthy Claws or not (report 243). A scratch stays while the
-          // door is locked, even if its slashes weren't read, unless the
-          // cell behind it was emptied (the reader sees its lit floor).
-          // What the player knew of a door that's still locked stays too: a
+          // the Filthy Claws or not (report 243). A scratch stays while its
+          // "?" portrait shows, even if its slashes weren't read. A scratched
+          // door always shows that portrait, so a plain door has none: its
+          // cell was emptied and sealed again on a day the reader didn't see
+          // (the user's run, 2026-10-25: a Rare scratch kept on a plain door
+          // gave a Rare Wolf a meal the game's jaws didn't show, and hid the
+          // advice), or the reader sees its lit floor. What the player knew of a door that's still locked stays too: a
           // rarity shown (Crow Whispers, or the "Treasure" Hunt's "?"
           // portrait) and the Hunt's Rare or better. None of it outlives the
           // run (the day going back), and a scratch needs the Filthy Claws
@@ -2720,7 +2729,7 @@
           if (c.shown) {
             m.cells[n] = { kind: c.shown.scratch || (was && was.kind === 'scratch') ? 'scratch' : 'revealed', tier: clamp(c.shown.tier, 0, TOP_TIER), event };
             if (c.shown.conf < 0.6) checks.add(n);
-          } else if (was && (was.kind === 'revealed' || was.kind === 'scratch') && !c.emptied) m.cells[n] = { kind: was.kind, tier: was.tier, event };
+          } else if (was && was.kind === 'revealed' && !c.emptied) m.cells[n] = { kind: was.kind, tier: was.tier, event };
           else if (was && was.kind === 'sealed' && was.atLeast) m.cells[n] = { kind: 'sealed', event, atLeast: was.atLeast };
           else m.cells[n] = { kind: 'sealed', event };
         }

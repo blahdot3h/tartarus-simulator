@@ -5,6 +5,7 @@ const path = require('node:path');
 const P = require('../tools/png.js');
 const S = require('../js/scan.js');
 const REF = require('../js/scan-data.js');
+const PICK = require('../js/pick-data.js');
 
 // AirPlay frames of the user's iPad (2026-10-24), kept out of the repo in
 // sandbox/tips/: the board with two instruments, and the same board with
@@ -19,6 +20,7 @@ const SMALL = 'airplay-1400-scratched-normal.png';
 const EMPTIED = 'airplay-1400-emptied-door.png';
 const STATUS_OVERLAP = 'airplay-1400-status-view-overlap.png';
 const TWO_LINE_TIP = 'airplay-1400-tip-two-line-name.png';
+const CAGE_FIGHT = 'airplay-1400-badge-cagefight.png';
 
 // Regression guard: the objective "Undercurrents" wraps onto three lines,
 // and its third ("times Completed") passed for the "Torture Instrument"
@@ -108,4 +110,17 @@ test('an instrument\'s name that wraps onto two lines is read whole', { skip: mi
   assert.ok(tip, 'a tip');
   assert.ok(tip.title[1] <= 139 && tip.title[3] >= 169, `title ${tip.title} holds both lines of the name`);
   assert.ok(tip.title[3] < 190, `title ${tip.title} stops above "Condition"`);
+});
+
+// Regression guard (the user's run, 2026-10-25): on the iPad the start
+// card's badge hangs lower than on Steam. The reader looked at the bare wall
+// above it, Cage Fight stayed unset, and a Rare Mammoth's jaws over a Normal
+// Lion read as a misread cell, which hid the advice.
+test('the start card\'s badge is read on the iPad', { skip: missing(CAGE_FIGHT) || missing(NO_TIP) }, () => {
+  const ref = S.withPanelIcons(REF, PICK);
+  assert.equal(S.scan(frame(CAGE_FIGHT), ref).badge.id, 'cagefight');
+  // Another card's badge, with no sample: found, not taken for Cage Fight.
+  const other = S.scan(frame(NO_TIP), ref).badge;
+  assert.ok(other, 'a badge');
+  assert.equal(other.id, null);
 });

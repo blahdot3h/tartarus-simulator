@@ -1625,9 +1625,17 @@
         .sort((a, b) => a.y0 - b.y0);
       const first = lines[0];
       if (!first) continue;
-      const tx0 = Math.min(...first.pieces.map((p) => p.x0)), tx1 = Math.max(...first.pieces.map((p) => p.x1));
+      // A long name wraps onto a second line, set close under the first
+      // ("Ferocious Beast's Ravenous Chains", the user's run, 2026-10-25);
+      // "Condition" sits further down, under the divider.
+      const name = [first];
+      for (const l of lines.slice(1)) {
+        if (l.y0 - Math.max(...name.map((n) => n.y1)) > 0.6 * first.h || name.length >= 3) break;
+        name.push(l);
+      }
+      const tx0 = Math.min(...name.flatMap((l) => l.pieces.map((p) => p.x0))), tx1 = Math.max(...name.flatMap((l) => l.pieces.map((p) => p.x1)));
       const room = Math.round(first.h * 0.35);
-      const title = [Math.max(x, tx0 - room), Math.max(y0, first.y0 - room), Math.min(box[2], tx1 + room), Math.min(box[3], first.y1 + room)];
+      const title = [Math.max(x, tx0 - room), Math.max(y0, first.y0 - room), Math.min(box[2], tx1 + room), Math.min(box[3], Math.max(...name.map((l) => l.y1)) + room)];
       return { box, title, h: first.h };
     }
     return null;
@@ -1739,7 +1747,9 @@
   // "Return to Selection" button at the top right, words of 6, 2 and 9
   // letters (and the eye icon after them), where the board otherwise shows
   // "Chromatic Prisoner", 9 and 8 (report 325: a pasted status view taken
-  // for a plain board).
+  // for a plain board). "Chromatic Prisoner" can show through just under it,
+  // and "Return" then reads as two words, 5 and 2 letters (the user's run,
+  // 2026-10-25): words before "to" are taken together.
   function readStatusView(img, loc) {
     const right = Math.max(at(loc, 5, 0)[0], at(loc, 5, 3)[0]) + 60 * loc.s;
     if (right > img.width - 30) return false;
@@ -1747,7 +1757,11 @@
       for (const line of textLines(img, right, 0, img.width - 1, Math.round(img.height / 2), { minH: 6, maxH: Math.max(40, img.height * 0.06), r, s: 0.5 })) {
         for (const p of line.pieces) {
           const w = p.words.map((q) => q.glyphs.length);
-          if (w.length >= 3 && Math.abs(w[0] - 6) + Math.abs(w[1] - 2) + Math.abs(w[2] - 9) <= 2) return true;
+          let before = 0;
+          for (let i = 0; i + 2 < w.length && i < 3; i++) {
+            before += w[i];
+            if (Math.abs(before - 6) + Math.abs(w[i + 1] - 2) + Math.abs(w[i + 2] - 9) <= 2) return true;
+          }
         }
       }
     }

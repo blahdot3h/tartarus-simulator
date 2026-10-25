@@ -17,6 +17,8 @@ const TIP_1 = 'airplay-kins-coin.png';
 const TIP_2 = 'airplay-filthy-claws.png';
 const SMALL = 'airplay-1400-scratched-normal.png';
 const EMPTIED = 'airplay-1400-emptied-door.png';
+const STATUS_OVERLAP = 'airplay-1400-status-view-overlap.png';
+const TWO_LINE_TIP = 'airplay-1400-tip-two-line-name.png';
 
 // Regression guard: the objective "Undercurrents" wraps onto three lines,
 // and its third ("times Completed") passed for the "Torture Instrument"
@@ -84,4 +86,26 @@ test('a locked door on an emptied cell is told from a plain door and a "?" door'
   const before = S.scan(frame(SMALL), REF);
   assert.equal(!!before.cells[6].emptied, false);
   assert.equal(before.cells[6].shown.tier, 0);
+});
+
+// Regression guard (the user's run, 2026-10-25): View Prison Status behind
+// the Warden's Treasure, with "Chromatic Prisoner" showing through just under
+// "Return to Selection". "Return" read as two words, the view as a plain
+// board with no action buttons, and the advice stayed hidden.
+test('View Prison Status is told with "Chromatic Prisoner" showing under its button', { skip: missing(STATUS_OVERLAP) || missing(NO_TIP) }, () => {
+  const r = S.scan(frame(STATUS_OVERLAP), REF);
+  assert.ok(r.ok);
+  assert.equal(r.statusView, true);
+  assert.equal(!!S.scan(frame(NO_TIP), REF).statusView, false, 'a plain board');
+});
+
+// Regression guard (the user's run, 2026-10-25): "Ferocious Beast's Ravenous
+// Chains" wraps onto a second line in its tip. Only the first line went to
+// the text reader, "Ferocious Beast's" matched no instrument, and the advice
+// waited for the instruments for good.
+test('an instrument\'s name that wraps onto two lines is read whole', { skip: missing(TWO_LINE_TIP) }, () => {
+  const tip = S.findToolTip(frame(TWO_LINE_TIP));
+  assert.ok(tip, 'a tip');
+  assert.ok(tip.title[1] <= 139 && tip.title[3] >= 169, `title ${tip.title} holds both lines of the name`);
+  assert.ok(tip.title[3] < 190, `title ${tip.title} stops above "Condition"`);
 });

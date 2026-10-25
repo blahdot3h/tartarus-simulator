@@ -2708,8 +2708,14 @@
           // cell behind it was emptied (the reader sees its lit floor).
           // What the player knew of a door that's still locked stays too: a
           // rarity shown (Crow Whispers, or the "Treasure" Hunt's "?"
-          // portrait) and the Hunt's Rare or better.
-          const was = base.cells[n];
+          // portrait) and the Hunt's Rare or better. None of it outlives the
+          // run (the day going back), and a scratch needs the Filthy Claws
+          // among the run's instruments: one kept from an earlier run let a
+          // Rare Wolf eat through its door, against the game's jaws (the
+          // user's run, 2026-10-25).
+          const sameRun = m.day >= base.day;
+          const clawless = (m.tools || []).length > 0 && !m.tools.includes('claws');
+          const was = sameRun && !(clawless && base.cells[n] && base.cells[n].kind === 'scratch') ? base.cells[n] : null;
           const event = c.event ? 'unknown' : null;
           if (c.shown) {
             m.cells[n] = { kind: c.shown.scratch || (was && was.kind === 'scratch') ? 'scratch' : 'revealed', tier: clamp(c.shown.tier, 0, TOP_TIER), event };
@@ -3472,6 +3478,7 @@
       readFrame: (bitmap) => new Promise((resolve) => readBitmap(bitmap, { quiet: true, folded: true, onRead: resolve })),
       readPick: (bitmap) => readPick(bitmap),
       readToolTip: (bitmap) => readToolTip(bitmap),
+      modelSnapshot: () => JSON.parse(JSON.stringify({ model, reading: reader.reading ? reader.reading.model : null })),
       // The instruments survey (QuickTime mode): the panel's slots in the
       // last reading, the run's instruments the analyzer has, and whether
       // they need confirming; and the set as read from the tips, confirmed.

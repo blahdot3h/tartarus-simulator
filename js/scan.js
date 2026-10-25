@@ -1645,30 +1645,41 @@
   // (Opulence: a scroll and coins). It sits at the same place in the
   // label's letter heights whatever the instruments (the user's Opulence
   // run, every board).
+  // On the iPad's taller screen it hangs lower, at the same size (the
+  // user's Cage Fight run, 2026-10-25): 43.3 letter heights under the label.
   // inner: the picture inside the ring (the ring is the same on every
   // card), else the whole badge.
-  function badgeBox(label, inner) {
+  const BADGE_PLACES = [{ x: 2.87, y: 32.1 }, { x: 2.7, y: 43.3 }];
+  function badgeBox(label, inner, place = BADGE_PLACES[0]) {
     const h = (label.x1 - label.x0) / 12.2;
-    const cx = label.x0 + 2.87 * h;
-    const cy = label.y1 + 32.1 * h;
+    const cx = label.x0 + place.x * h;
+    const cy = label.y1 + place.y * h;
     const rx = (inner ? 2.6 : 3.9) * h;
     const ry = (inner ? 2.0 : 3.9) * h;
     return [cx - rx, cy - ry, cx + rx, cy + ry].map(Math.round);
   }
 
+  // Where the badge hangs on this screen, if there's one: without a badge
+  // the wall there is dark, 0 bright pixels on every board without one,
+  // 6-9% with one (17% on the iPad).
+  function badgePlace(img, label) {
+    if (!label) return null;
+    return BADGE_PLACES.find((place) => {
+      const box = badgeBox(label, false, place);
+      return box[0] >= 0 && box[3] < img.height && colorShare(img, ...box, (h, s, v) => v > 0.3) >= 0.02;
+    }) || null;
+  }
+
   // The badge there, if any: its id when it's one the reader knows.
   function readBadge(img, label, ref) {
-    if (!label) return null;
-    const box = badgeBox(label);
-    if (box[0] < 0 || box[3] >= img.height) return null;
-    // Without a badge the wall there is dark: 0 bright pixels on every board
-    // without one, 6-9% with one.
-    if (colorShare(img, ...box, (h, s, v) => v > 0.3) < 0.02) return null;
+    const place = badgePlace(img, label);
+    if (!place) return null;
+    const box = badgeBox(label, false, place);
     // On the picture inside the ring, a card scores 0.986-1 against its own
     // sample and at most 0.918 against another's (Opulence and Tyranny, the
     // user's runs; on the whole badge 0.979-0.99, report 174): a card
     // without a sample stays unknown.
-    const feat = artFeature(img, ...badgeBox(label, true));
+    const feat = artFeature(img, ...badgeBox(label, true, place));
     // Each card's best sample.
     const by = new Map();
     for (const b of ref.badges || []) {
@@ -2251,7 +2262,7 @@
     return { ok: true, loc, cells, warden, doors, days, tools, badge, chromatic, objective, chain, decision, statusView, notes, ms: Date.now() - t0 };
   }
 
-  const api = { scan, scanPick, pickArtBox, pickRerollShown, locateBoard, readCell, findWarden, findToolIcons, findToolTip, readDoors, readDays, doorCards, dayNumber, prefixVector, textLines, glyphVector, faceVector, artFeature, similarity, hsv, blobs, at, gridOf, scaleAt, grayOf, blur, RING, H0, ARROW, FACE, GLYPH, locateByLabels, readChainScreen, readDecision, readObjectiveTitle, withPanelIcons, badgeBox, readBadge };
+  const api = { scan, scanPick, pickArtBox, pickRerollShown, locateBoard, readCell, findWarden, findToolIcons, findToolTip, readDoors, readDays, doorCards, dayNumber, prefixVector, textLines, glyphVector, faceVector, artFeature, similarity, hsv, blobs, at, gridOf, scaleAt, grayOf, blur, RING, H0, ARROW, FACE, GLYPH, locateByLabels, readChainScreen, readDecision, readObjectiveTitle, withPanelIcons, badgeBox, badgePlace, readBadge };
   if (typeof module === 'object' && module.exports) module.exports = api;
   root.TartarusScan = api;
 })(typeof window !== 'undefined' ? window : typeof self !== 'undefined' ? self : globalThis);

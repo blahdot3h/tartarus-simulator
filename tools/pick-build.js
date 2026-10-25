@@ -77,7 +77,12 @@ for (const [file, id] of Object.entries(TRUTH.badges || {})) {
     console.log(`${file}: the instrument panel wasn't found, left out`);
     continue;
   }
-  badges.push({ id, feat: pack(S.artFeature(img, ...S.badgeBox(label, true))) });
+  const place = S.badgePlace(img, label);
+  if (!place) {
+    console.log(`${file}: no badge under the instrument panel, left out`);
+    continue;
+  }
+  badges.push({ id, feat: pack(S.artFeature(img, ...S.badgeBox(label, true, place))) });
 }
 
 const date = new Date().toISOString().slice(0, 10);

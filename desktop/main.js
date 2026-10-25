@@ -94,6 +94,7 @@ const settings = Object.assign({
   overlayWidth: 360,
   hideFromCaptures: true, // kept out of screenshots, recordings and the shared window
   hideBehind: false, // hidden while another window is in front of the game
+  highlight: true, // a box over the game around what the advice says to click
   collapsed: false, // the overlay folded to a thin bar ("–" on it)
   cpu: 'half', // the analyzer's share of the processor (tray: Processor use)
   gameFirst: true, // the site pages run below normal priority, so the game comes first
@@ -865,7 +866,7 @@ const usageText = (u, c) => `app ${u.mb} MB (${u.each.join(', ')})${u.cpu === nu
 
 // ---------- Windows ----------
 
-const wins = { follow: null, analyzer: null, overlay: null, review: null };
+const wins = { follow: null, analyzer: null, overlay: null, review: null, highlight: null };
 let quitting = false;
 let tray = null;
 
@@ -1270,6 +1271,8 @@ ipcMain.on('site:riot', (e, on) => {
   if (!fromPage(e, 'follow') || !!on === riot) return;
   riot = !!on;
   note(riot ? 'Riot: the fight is on' : 'back in the prison');
+  // The box over the game waits for a picture of the screen now.
+  highlightClicked();
   recordEvent({ type: riot ? 'riot' : 'riot-over' });
   if (riot && !settings.collapsed) {
     settings.collapsed = true;
@@ -1291,6 +1294,7 @@ ipcMain.on('site:run', (e, what) => {
   if (!fromPage(e, 'follow')) return;
   if (what === 'over' && !runOver) {
     runOver = true;
+    highlightClicked();
     note('run over: its record is closed, the analyzer cleared');
     recordEvent({ type: 'run-over' });
     recording = null;
@@ -1307,7 +1311,15 @@ ipcMain.on('site:run', (e, what) => {
 // runs, how Auto Screenshot Mode is doing in numbers: for the debug log,
 // to find out why pictures don't come. Never the game log's lines.
 ipcMain.on('site:trigger', (e, kind) => {
-  if (fromPage(e, 'follow')) note('trigger:', String(kind));
+  if (!fromPage(e, 'follow')) return;
+  note('trigger:', String(kind));
+  // The screen is changing: the box shown may be on what was just clicked.
+  highlightClicked();
+});
+// A button clicked in the prison (the log's click line; its fact only):
+// the box goes at once, door cards and the fight's start included.
+ipcMain.on('site:click', (e) => {
+  if (fromPage(e, 'follow')) highlightClicked();
 });
 let checked = null; // the counts at the last minute's note
 // A count since the last note; one smaller than then started over (a new
@@ -1491,6 +1503,79 @@ function command(cmd) {
   }
 }
 
+// #region highlight
+// What to click, boxed over the game (the user, 2026-10-24): a see-through
+// window the size of the game window that lets every click through to the
+// game, kept out of captures as the overlay is, and shown only while the
+// game is in front and the advice is for the board just read. The box comes
+// from the analyzer in the picture's pixels; the picture is the game window,
+// so it scales to the window's place on the screen.
+let testHighlight = false; // --test: shown whatever is in front
+let highlightShown = '';
+// After a click in the game the box is put away until a picture taken after
+// it has been read and advised on, so it never stays on the card just
+// clicked or comes back over another screen (the user: it stayed too long,
+// and after the fight began).
+let highlightGone = 0; // the last click's time
+function highlightClicked() {
+  highlightGone = Date.now();
+  updateHighlight();
+}
+function makeHighlight() {
+  const win = new BrowserWindow({
+    show: false,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: false,
+    focusable: false,
+    skipTaskbar: true,
+    hasShadow: false,
+    alwaysOnTop: true,
+    webPreferences: { preload: path.join(__dirname, 'lib', 'highlight-preload.js'), sandbox: true, contextIsolation: true },
+  });
+  win.setIgnoreMouseEvents(true);
+  win.setAlwaysOnTop(true, 'screen-saver');
+  win.setContentProtection(true);
+  // A box sent before the page is ready would be lost: sent again once it is.
+  win.webContents.on('did-finish-load', () => {
+    highlightShown = '';
+  });
+  win.loadFile(path.join(__dirname, 'lib', 'highlight.html'));
+  wins.highlight = win;
+  return win;
+}
+function updateHighlight() {
+  const win = wins.highlight;
+  if (!win || win.isDestroyed()) return;
+  let hl = lastAdvice && lastAdvice.highlight;
+  // Only from a picture that came after the last click (hl.at, the time it
+  // reached the analyzer), and not during the Riot or once the run is over.
+  if (hl && (!(hl.at > highlightGone) || riot || runOver)) hl = null;
+  const r = settings.highlight && hl && hl.box && game.running && game.hwnd && win32 ? win32.frame(game.hwnd) : null;
+  const front = r && (testHighlight || (win32.foreground() === game.hwnd && !win32.minimized(game.hwnd)));
+  if (!front) {
+    if (highlightShown) {
+      win.hide();
+      highlightShown = '';
+    }
+    return;
+  }
+  const at = screen.screenToDipRect(null, r);
+  const k = at.width / hl.w;
+  const box = { x: Math.round(hl.box[0] * k), y: Math.round(hl.box[1] * (at.height / hl.h)), w: Math.round((hl.box[2] - hl.box[0]) * k), h: Math.round((hl.box[3] - hl.box[1]) * (at.height / hl.h)) };
+  const key = JSON.stringify([at, box]);
+  if (key === highlightShown) return;
+  highlightShown = key;
+  win.setBounds({ x: Math.round(at.x), y: Math.round(at.y), width: Math.round(at.width), height: Math.round(at.height) });
+  win.webContents.send('box', { box, label: hl.label || '' });
+  if (!win.isVisible()) {
+    win.showInactive();
+    win.setAlwaysOnTop(true, 'screen-saver');
+  }
+}
+
+// #endregion
 // #region share-game
 // Only follow.html may share a window, and the only window it gets is the
 // game's, found by its title. Another window never is. A whole screen is
@@ -1677,6 +1762,7 @@ function rebuildMenu() {
     { type: 'separator' },
     { label: 'Show the overlay', type: 'checkbox', checked: settings.overlayOn, accelerator: HOTKEYS.overlay, click: (i) => setOverlayOn(i.checked) },
     { label: 'Hide it while another window is in front', type: 'checkbox', checked: settings.hideBehind, enabled: !!win32, click: (i) => { settings.hideBehind = i.checked; saveSettings(); updateOverlay(); } },
+    { label: 'Highlight what to click', type: 'checkbox', checked: settings.highlight, enabled: !!win32, click: (i) => { settings.highlight = i.checked; saveSettings(); updateHighlight(); } },
     { label: 'Share the game’s screen when Windows won’t share its window', type: 'checkbox', checked: screenAllowed(), enabled: agreed && !!win32, click: (i) => setScreenShare(i.checked) },
     { label: 'Hide it from screenshots and streams', type: 'checkbox', checked: settings.hideFromCaptures, click: (i) => { settings.hideFromCaptures = i.checked; saveSettings(); if (wins.overlay) wins.overlay.setContentProtection(i.checked); } },
     { label: 'Put the overlay back in the corner', click: () => { settings.overlay = null; overlayPlaced = false; saveSettings(); placeOverlay(); } },
@@ -1787,6 +1873,8 @@ if (!app.requestSingleInstanceLock()) {
       }
       // "unlisted": the capture's list leaves the game window out.
       if (/unlisted/.test(text)) testUnlisted = true;
+      // "highlight-any": the box shown whatever window is in front.
+      if (/highlight-any/.test(text)) testHighlight = true;
       // "share-fail": Windows won't share the game window.
       if (/share-fail/.test(text)) testShareFail = true;
       // "cpu one": as the tray's Processor use does.
@@ -1802,12 +1890,14 @@ if (!app.requestSingleInstanceLock()) {
     await refreshLog();
     await adoptLiveAgreement();
     makeOverlay();
+    makeHighlight();
     makeSiteWindow('follow', { width: 1000, height: 860, title: 'Auto Screenshot Mode · Tartarus Overlay' });
     makeAnalyzer();
     makeTray();
     registerHotkeys();
     lookForGame();
     setInterval(updateOverlay, 250);
+    setInterval(updateHighlight, 250);
     setInterval(checkSite, 10 * 60 * 1000);
     startUpdater();
     if (!TEST && !game.running) {

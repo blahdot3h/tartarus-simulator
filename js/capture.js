@@ -18,7 +18,54 @@
 (function () {
   'use strict';
 
-  const POLL_MS = 1000;
+  // How often the log is looked at: a move is seen within a quarter second
+  // (it was once a second, a second of the time to the advice).
+  const POLL_MS = 250;
+  // How much of its settle time each trigger waits now: pictures come as
+  // fast as they can, and a trigger waits longer only after a picture of it
+  // came too soon (the user, 2026-10-24). follow.js says which (slower,
+  // faster); a quarter at first, never more than the whole. Each trigger
+  // (its kind and pattern) learns its own: the game's screens fade in at
+  // their own pace (door cards after a new day, the decision cards after a
+  // move). A share that came too soon is never gone back to, and what was
+  // learned is kept between visits.
+  const FAST_MIN = 0.25;
+  // The instrument offer and the objective flip their cards in: a picture
+  // a quarter of the way in failed about half the time (the user's runs of
+  // 2026-10-25), and each failed read cost seconds. They wait the whole.
+  const FAST_FLOOR = { instruments: 1, objective: 1 };
+  const WAITS = 'tartarus-sim:capture-waits:v1';
+  let waits = { fast: {}, bad: {} };
+  try {
+    const kept = JSON.parse(localStorage.getItem(WAITS) || 'null');
+    if (kept && kept.fast && kept.bad) waits = kept;
+  } catch (e) {
+    // none kept
+  }
+  const keep = () => {
+    try {
+      localStorage.setItem(WAITS, JSON.stringify(waits));
+    } catch (e) {
+      // not kept
+    }
+  };
+  const floorOf = (key) => Math.max(FAST_MIN, FAST_FLOOR[String(key).split('|')[0]] || 0);
+  const shareOf = (key) => Math.max(floorOf(key), waits.fast[key] === undefined ? FAST_MIN : waits.fast[key]);
+  function slower(key) {
+    const now = shareOf(key);
+    waits.bad[key] = Math.max(waits.bad[key] || 0, now);
+    waits.fast[key] = Math.min(1, now * 2);
+    keep();
+    return waits.fast[key];
+  }
+  function faster(key) {
+    const now = shareOf(key);
+    // Not back to a share that came too soon: a little more than it.
+    const least = waits.bad[key] ? Math.min(1, waits.bad[key] * 1.25) : 0;
+    waits.fast[key] = Math.max(floorOf(key), least, now * 0.85);
+    if (waits.fast[key] !== now) keep();
+    return waits.fast[key];
+  }
   const IDB = 'tartarus-sim-capture';
   const listeners = { status: [], hit: [], seen: [], frame: [] };
   // detail: whether the game writes the detail lines the triggers come from
@@ -29,6 +76,7 @@
   let rules = []; // [{ kind, re, settle, rank }]
   let watch = null; // log lines worth showing while finding triggers
   let burst = null; // matched lines waiting for the animations to settle
+  let again = 0; // a burst's picture tried again (fire)
   let pace = 1; // settle times are scaled by this: the game's Speed-up runs its animations faster
   let tail = null; // { post(message), stop() }
   let track = null;
@@ -280,6 +328,7 @@
     if (rule.kind === 'skip') {
       if (burst) clearTimeout(burst.timer);
       burst = null;
+      clearTimeout(again);
       return;
     }
     // A "speed" line (the game's Speed-up button) takes no picture: the page
@@ -296,24 +345,43 @@
     }
     // Lines in a burst become one frame, once the log has been quiet for the
     // longest settle time among them.
-    if (!burst) burst = { kind: rule.kind, rank: rule.rank, settle: 0, hits: [], timer: 0 };
+    if (!burst) burst = { kind: rule.kind, rank: rule.rank, settle: 0, full: 0, key: '', hits: [], timer: 0 };
     if (rule.rank > burst.rank) {
       burst.kind = rule.kind;
       burst.rank = rule.rank;
     }
-    burst.settle = Math.max(burst.settle, Math.max(250, rule.settle * pace));
+    // full: the settle time as it was; settle: the share of it waited now.
+    const whole = Math.max(250, rule.settle * pace);
+    burst.full = Math.max(burst.full, whole);
+    // key: the trigger whose wait the burst waits, which learns from it.
+    const key = `${rule.kind}|${rule.re.source}`;
+    const wait = Math.max(150, whole * shareOf(key));
+    if (wait >= burst.settle) {
+      burst.settle = wait;
+      burst.key = key;
+    }
     if (burst.hits.length < 40) burst.hits.push({ kind: hit.kind, at: hit.at, text: hit.text });
     clearTimeout(burst.timer);
     burst.timer = setTimeout(fire, burst.settle);
   }
 
-  async function fire() {
-    const b = burst;
-    burst = null;
+  // retry: a burst whose picture couldn't be taken after the share of its
+  // settle time, tried again at the whole of it.
+  async function fire(retry) {
+    const b = retry || burst;
+    if (!retry) burst = null;
     if (!b) return;
     const frame = await grab();
+    // No picture this soon (the window share just starting, after the page
+    // reloaded): tried once more when the whole settle time has passed, as
+    // pictures were taken before they came sooner. The kind's wait stays:
+    // that wasn't the game's animation.
+    if (!frame && !retry && b.full > b.settle) {
+      again = setTimeout(() => fire(b), b.full - b.settle);
+      return;
+    }
     if (frame) setState({ frames: state.frames + 1 });
-    emit('frame', { kind: b.kind, hits: b.hits, frame, blank: isBlank(frame), why: frame ? '' : whyNot(), time: new Date() });
+    emit('frame', { kind: b.kind, hits: b.hits, frame, blank: isBlank(frame), why: frame ? '' : whyNot(), time: new Date(), waited: retry ? b.full : b.settle, full: b.full, key: b.key });
   }
 
   // #endregion
@@ -644,10 +712,11 @@
 
   // #endregion
 
-  async function captureNow(kind) {
+  // extra: what to tell with the frame (a retake: { retake: true }).
+  async function captureNow(kind, extra) {
     const frame = await grab();
     if (frame) setState({ frames: state.frames + 1 });
-    emit('frame', { kind: kind || 'manual', hits: [], frame, blank: isBlank(frame), why: frame ? '' : whyNot(), time: new Date() });
+    emit('frame', Object.assign({ kind: kind || 'manual', hits: [], frame, blank: isBlank(frame), why: frame ? '' : whyNot(), time: new Date() }, extra || {}));
     return !!frame;
   }
 
@@ -713,6 +782,9 @@
     setRules,
     setWatch,
     setPace,
+    slower,
+    faster,
+    shareOf,
     captureNow,
     grab,
   };

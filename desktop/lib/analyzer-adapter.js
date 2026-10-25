@@ -191,6 +191,9 @@
       langMiss: A && typeof A.langMiss === 'function' ? A.langMiss() : null,
       riot: riot && riot.value !== '' ? Number(riot.value) : null,
       dayof: text($('az-dayof')),
+      // The box to click for the advice, in the last picture's pixels
+      // ({ w, h, box, label }), for the box drawn over the game.
+      highlight: A && typeof A.highlight === 'function' ? A.highlight() : null,
       // The run's contract (start card), as set on the analyzer: shown on
       // the overlay, so a wrong one shows.
       contract: (() => {

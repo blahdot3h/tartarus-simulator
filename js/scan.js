@@ -2062,7 +2062,25 @@
     const row = ends.some((e) => lefts.some((l) => Math.abs(l.mid - e.mid) < e.h / 2 && l.x1 < e.x0 && e.x0 - l.x1 < 30 * e.h) || (consume && redX < e.x0 && e.x0 - redX < 30 * e.h));
     if (!title && !(row && (consume || replace))) return null;
     if (office) return { office: true, replace: false, consume: false, end: false, title };
-    return { replace, consume, end, title, red: Math.round(1000 * red) / 1000 };
+    // How many cards, by where their labels are. The row is centred under
+    // the board, a card about 1.9 cells on: with three, Replace's label is
+    // in the middle and End's starts 1.75 cells right of it; with two,
+    // Replace's is a cell left and End's starts 0.8 right. Three cards are
+    // Consume, Replace and End: a Consume card still fading in can be too
+    // dim for its red (the user's run of 2026-10-25, pictures 44 and 47
+    // read as Replace, End, so the advice left Consume out). Each label is
+    // read at several sizes, so they vote; End alone needs two votes (a
+    // stray short mark sat where it would be on 7 of 425 saved rows).
+    const [cx] = at(loc, 2.5, 3);
+    const pitch = scaleAt(loc, 2.5, 3) * 119.45;
+    const reps = labels.filter((l) => l.red < 0.01).map((l) => ((l.x0 + l.x1) / 2 - cx) / pitch);
+    const endsAt = ends.map((e) => (e.x0 - cx) / pitch);
+    const repMid = reps.filter((v) => Math.abs(v) < 0.45).length;
+    const endFar = endsAt.filter((v) => v > 1.3 && v < 2.2).length;
+    const repLeft = reps.filter((v) => v > -1.45 && v < -0.5).length;
+    const endNear = endsAt.filter((v) => v > 0.5 && v < 1.25).length;
+    const three = repMid + endFar > repLeft + endNear && (repMid > 0 || endFar >= 2);
+    return { replace, consume: consume || three, end, title, red: Math.round(1000 * red) / 1000 };
   }
 
   // ---------- Everything ----------

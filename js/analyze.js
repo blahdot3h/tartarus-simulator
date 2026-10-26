@@ -1245,8 +1245,9 @@
   // the desktop app's box over the game (the user, 2026-10-24). Only while
   // the advice is settled, for the board as just read.
   let lastPick = null;
-  // When the last picture came: the app shows a box only from a picture that
-  // came after the last click in the game.
+  // When the last picture was taken (Auto Screenshot Mode says; else when it
+  // came): the app shows a box only from a picture taken after the last
+  // click in the game.
   let pictureAt = 0;
   let highlightWhy = ''; // why there was no box, for the debug report
   let highlightLoading = false;
@@ -1882,7 +1883,9 @@
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     ctx.drawImage(source, 0, 0, w, h);
     reader.image = canvas;
-    pictureAt = Date.now();
+    pictureAt = (opts && opts.takenAt) || Date.now();
+    // How the game's screen moved before Auto Screenshot Mode took it (js/capture.js settle-watch), for the reading's details.
+    reader.motion = (opts && opts.motion) || null;
     runScan(ctx.getImageData(0, 0, w, h), opts);
   }
 
@@ -2329,13 +2332,13 @@
     return false;
   }
 
-  function readPick(source) {
+  function readPick(source, takenAt) {
     const scale = Math.min(1, 2600 / source.width);
     const w = Math.round(source.width * scale);
     const h = Math.round(source.height * scale);
     // Its size, for the highlight of the card to take.
     lastPick = { w, h, at: Date.now() };
-    pictureAt = lastPick.at;
+    pictureAt = takenAt || lastPick.at;
     const canvas = document.createElement('canvas');
     canvas.width = w;
     canvas.height = h;
@@ -2784,12 +2787,17 @@
       // The mouse pointer over a card's number hides its digit (report 318),
       // unless the lit cells settled it (report 360). Unsettled, that door is
       // marked Check: a guess, not a reading.
-      if (r.doors.hidden && r.doors.hidden.length && r.doors.lit) notes.push(`The mouse pointer covers the number on one card: the lit cells show it is cell ${L(r.doors.hidden[0])}.`);
+      if (r.doors.hidden && r.doors.hidden.length && r.doors.seen === 'place') {
+        // Told by its place in the row and its picture (js/scan.js missingDoor).
+        notes.push(`The mouse pointer covers a door card: by its place among the cards and its picture, it is cell ${r.doors.hidden.map(L).join(' and ')}. Check it.`);
+        r.doors.hidden.forEach((n) => checks.add(n));
+      } else if (r.doors.hidden && r.doors.hidden.length && r.doors.lit) notes.push(`The mouse pointer covers the number on one card: the lit cells show it is cell ${L(r.doors.hidden[0])}.`);
       else if (r.doors.hidden && r.doors.hidden.length) {
         notes.push(`The mouse pointer covers the number on the card read as ${r.doors.hidden.map((n) => `cell ${L(n)}`).join(' and ')}: check that door.`);
         r.doors.hidden.forEach((n) => checks.add(n));
       }
       else if (r.doors.conf < 0.6) notes.push('Today’s doors were hard to read: check them.');
+      if (r.doors.seen === 'missing') notes.push('A door card couldn’t be read (the mouse pointer may be over it): today has a door these don’t show. Move the pointer off the cards, or add it.');
     } else if (!r.decision && !r.statusView && base.step === 'patrol' && (base.dest || []).length && m.day === base.day && m.warden === base.warden) {
       // No door cards and no buttons, on the same day with the warden where
       // it was: the cards haven't come back yet (report 334: pictured just
@@ -3056,6 +3064,8 @@
     const r = reader.result;
     const rd = reader.reading;
     const lines = [`Reader ${SCRIPT_QUERY.replace(/^\?v=/, '') || 'local'}, ${reader.follow ? 'an Auto Screenshot Mode picture' : 'a screenshot'} of ${reader.image.width}×${reader.image.height}, read in ${(reader.ms / 1000).toFixed(1)} s.`];
+    const mo = reader.follow && reader.motion;
+    if (mo) lines.push(`Screen watch: ${mo.watched ? `taken ${(mo.watched / 1000).toFixed(2)} s after its line, once the screen settled` : 'taken at the timed wait'}; the screen moved up to ${mo.peak} against a flicker of ${mo.flicker}.`);
     // The Warden's Treasure isn't read from a picture: during it, the picture
     // is a board, from before it or seen behind it (reports 349, 363: taken
     // for a board read wrong).
@@ -3510,8 +3520,8 @@
     // Follow my game (js/auto.js, beta): read frames of the game, load
     // them, and ask, without the toasts a pasted screenshot gets.
     window.TartarusAnalyzer = {
-      readFrame: (bitmap) => new Promise((resolve) => readBitmap(bitmap, { quiet: true, folded: true, onRead: resolve })),
-      readPick: (bitmap) => readPick(bitmap),
+      readFrame: (bitmap, takenAt, motion) => new Promise((resolve) => readBitmap(bitmap, { quiet: true, folded: true, onRead: resolve, takenAt, motion })),
+      readPick: (bitmap, takenAt) => readPick(bitmap, takenAt),
       usePick: (read, fresh) => usePick(read, fresh),
       readTreasure: (bitmap) => readTreasure(bitmap),
       readObjective: (bitmap) => readObjective(bitmap),

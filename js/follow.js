@@ -28,7 +28,11 @@
   // screen at the end writes the day line too, with max=0, and is left out.
   const DEFAULT_RULES = [
     '# kind | pattern | settle ms  (one trigger a line; # starts a note)',
-    '# Tartarus Prison is S16 in the log. A run\'s objective, when it shows one:',
+    '# Tartarus Prison is S16 in the log. A run\'s contract card (Cage Fight,',
+    '# Iron Law, Tyranny, Opulence), when it shows one, before its objective:',
+    '# it changes which instruments to take.',
+    'objective | S16BoardThemePop Run | 1500',
+    '# A run\'s objective, when it shows one:',
     'objective | S16BoardTaskPop Run | 1500',
     '# The pick of 3 instruments, and after a re-roll:',
     'instruments | S16BoardRelicPop Run | 1500',
@@ -434,7 +438,7 @@
   // js/auto.js). It goes by the browser's BroadcastChannel, which reaches
   // only this site's own pages in this browser. Nothing is uploaded.
   async function onFrame(f) {
-    const c = { id: nextId++, time: f.time, kind: f.kind, hits: f.hits || [], frame: !!f.frame, why: f.why || '', thumb: '', full: '', sent: false, read: null, state: '', asked: false, note: '', waited: f.waited || 0, wholeWait: f.full || 0, retake: !!f.retake, of: f.of || 0, key: f.key || f.kind, at: Date.now() };
+    const c = { id: nextId++, time: f.time, kind: f.kind, hits: f.hits || [], frame: !!f.frame, why: f.why || '', thumb: '', full: '', sent: false, read: null, state: '', asked: false, note: '', waited: f.waited || 0, wholeWait: f.full || 0, retake: !!f.retake, of: f.of || 0, key: f.key || f.kind, watched: f.watched || 0, motion: f.motion || null, at: Date.now() };
     lastPicture = { at: Date.now(), kind: c.kind, ok: c.frame, why: c.why };
     tell();
     captures.unshift(c);
@@ -476,7 +480,9 @@
           // that one rather than advise on a screen still fading in.
           const quick = quickBoard(c);
           // gifts: the Treasure's counts (Rainbows, picks confirmed).
-          channel.postMessage({ type: 'frame', to: to.id, from: me, id: c.id, kind: c.kind, fresh, after, treasureView, quick, gifts: Object.assign({}, gifts), pixels: pix, blob });
+          // takenAt: when the picture was taken (the box over the game counts
+          // a picture only from after the last click in the game).
+          channel.postMessage({ type: 'frame', to: to.id, from: me, id: c.id, kind: c.kind, fresh, after, treasureView, quick, watched: c.watched, motion: c.motion, takenAt: c.time ? new Date(c.time).getTime() : Date.now(), gifts: Object.assign({}, gifts), pixels: pix, blob });
           c.sent = true;
         }
       }

@@ -61,6 +61,11 @@ if (arg('user-data')) app.setPath('userData', path.resolve(arg('user-data')));
 // an old, narrow picture of its page: every window draws as if in front.
 app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+// Chromium runs a hidden window's page at idle priority and in Windows'
+// efficiency mode: the analyzer is one, so its reading and its live check
+// ran on a hybrid CPU's slow cores, two or three times slower while the game
+// ran (the user's i9-14900K, 2026-10-25: reads from 0.5 s to 1.1 s and more).
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
 // The app never plays sound: no page it loads, now or after a site change,
 // can make any (the user heard sounds in the background while gaming).
 app.commandLine.appendSwitch('mute-audio');
@@ -450,6 +455,25 @@ const win32 = (() => {
       }
       return list;
     };
+    // Windows' efficiency mode (EcoQoS) for a process: off, as the app
+    // asks for its pages. PROCESS_POWER_THROTTLING_EXECUTION_SPEED in the
+    // control mask with the state clear turns it off; read back, whether
+    // it's on.
+    const THROTTLE = koffi.struct('PROCESS_POWER_THROTTLING_STATE', { Version: 'uint32', ControlMask: 'uint32', StateMask: 'uint32' });
+    const setInfo = kernel32.func('__stdcall', 'SetProcessInformation', 'bool', ['intptr', 'int', koffi.pointer(THROTTLE), 'uint32']);
+    const getInfo = kernel32.func('__stdcall', 'GetProcessInformation', 'bool', ['intptr', 'int', koffi.inout(koffi.pointer(THROTTLE)), 'uint32']);
+    const ecoOff = (pid) => {
+      const h = pid ? openProcess(0x1200, false, pid) : 0; // set + query limited information
+      if (!h) return null;
+      try {
+        const now = { Version: 1, ControlMask: 0, StateMask: 0 };
+        const was = getInfo(h, 4, now, koffi.sizeof(THROTTLE)) && !!(now.ControlMask & 1) && !!(now.StateMask & 1);
+        setInfo(h, 4, { Version: 1, ControlMask: 1, StateMask: 0 }, koffi.sizeof(THROTTLE));
+        return was;
+      } finally {
+        closeHandle(h);
+      }
+    };
     const elevatedPid = (pid) => {
       const h = pid ? openProcess(0x1000, false, pid) : 0;
       if (!h) return null;
@@ -460,6 +484,8 @@ const win32 = (() => {
       }
     };
     return {
+      // Efficiency mode off for a process; true if it had been on.
+      ecoOff,
       // Whether the program behind a window runs as administrator: Windows
       // cuts off at once a window share from a program that doesn't. The
       // game's own process often won't say (its protection); a game started
@@ -761,6 +787,29 @@ const CPU_USE = {
   one: { label: 'Lightest: one core', workers: 1 },
 };
 const cpuUse = () => CPU_USE[settings.cpu] || CPU_USE.half;
+// Each minute: the site pages still run at the priority the app gave them,
+// with Windows' efficiency mode off. Chromium lowered a hidden page's to
+// idle and turned efficiency mode on after some hours (the user's app,
+// 2026-10-25); the debug log says when it had to be put back.
+function keepPagePriority() {
+  const os = require('os');
+  const want = settings.gameFirst ? os.constants.priority.PRIORITY_BELOW_NORMAL : os.constants.priority.PRIORITY_NORMAL;
+  for (const name of ['follow', 'analyzer']) {
+    const win = wins[name];
+    if (!win || win.isDestroyed()) continue;
+    try {
+      const pid = win.webContents.getOSProcessId();
+      if (!pid) continue;
+      const was = os.getPriority(pid);
+      if (was !== want) os.setPriority(pid, want);
+      const eco = win32 && win32.ecoOff ? win32.ecoOff(pid) : null;
+      if (was !== want || eco) note(`${name} page: priority put back (it was ${was}${eco ? ', in efficiency mode' : ''})`);
+    } catch (e) {
+      // the page is going or gone
+    }
+  }
+}
+setInterval(keepPagePriority, 60 * 1000);
 function tunePage(name) {
   const win = wins[name];
   if (!win || win.isDestroyed()) return;
@@ -769,6 +818,7 @@ function tunePage(name) {
     const os = require('os');
     const pid = wc.getOSProcessId();
     os.setPriority(pid, settings.gameFirst ? os.constants.priority.PRIORITY_BELOW_NORMAL : os.constants.priority.PRIORITY_NORMAL);
+    if (win32 && win32.ecoOff) win32.ecoOff(pid);
     note(`${name} page: ${settings.gameFirst ? 'below normal' : 'normal'} priority (process ${pid})`);
   } catch (e) {
     note(`${name} page priority not set:`, String((e && e.message) || e));
@@ -1517,6 +1567,9 @@ let highlightShown = '';
 // clicked or comes back over another screen (the user: it stayed too long,
 // and after the fight began).
 let highlightGone = 0; // the last click's time
+let highlightWant = { key: '', since: 0 }; // the box asked for, since when
+let highlightOn = ''; // the box drawn now
+const HIGHLIGHT_HOLD_MS = 300;
 function highlightClicked() {
   highlightGone = Date.now();
   updateHighlight();
@@ -1549,9 +1602,17 @@ function updateHighlight() {
   const win = wins.highlight;
   if (!win || win.isDestroyed()) return;
   let hl = lastAdvice && lastAdvice.highlight;
-  // Only from a picture that came after the last click (hl.at, the time it
-  // reached the analyzer), and not during the Riot or once the run is over.
+  // Only from a picture taken after the last click in the game or screen
+  // change (hl.at, when the picture was taken), and not during the Riot or
+  // once the run is over.
   if (hl && (!(hl.at > highlightGone) || riot || runOver)) hl = null;
+  // A box not drawn yet waits while a newer picture is being read (its
+  // advice may be for the screen before: the user saw the box on the first
+  // card, then moved), and until it has held for a moment, so it's drawn
+  // where it ends up (the user, 2026-10-25). One already drawn stays.
+  const want = hl && hl.box ? JSON.stringify([hl.box, hl.label]) : '';
+  if (want !== highlightWant.key) highlightWant = { key: want, since: Date.now() };
+  if (want && want !== highlightOn && ((lastAdvice && lastAdvice.reading) || Date.now() - highlightWant.since < HIGHLIGHT_HOLD_MS)) hl = null;
   const r = settings.highlight && hl && hl.box && game.running && game.hwnd && win32 ? win32.frame(game.hwnd) : null;
   const front = r && (testHighlight || (win32.foreground() === game.hwnd && !win32.minimized(game.hwnd)));
   if (!front) {
@@ -1559,8 +1620,10 @@ function updateHighlight() {
       win.hide();
       highlightShown = '';
     }
+    highlightOn = '';
     return;
   }
+  highlightOn = want;
   const at = screen.screenToDipRect(null, r);
   const k = at.width / hl.w;
   const box = { x: Math.round(hl.box[0] * k), y: Math.round(hl.box[1] * (at.height / hl.h)), w: Math.round((hl.box[2] - hl.box[0]) * k), h: Math.round((hl.box[3] - hl.box[1]) * (at.height / hl.h)) };

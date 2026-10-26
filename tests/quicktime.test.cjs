@@ -98,7 +98,7 @@ test('an old stage timeout cannot erase a newer stage after the old analyzer dra
 function bridgeHarness(options = {}) {
   const elements = new Map();
   const classes = new Set();
-  const element = () => ({ textContent: '', hidden: false, disabled: false, checked: true, listeners: {}, firstChild: null, classList: { add() {} }, setAttribute() {}, appendChild() {}, append() {}, prepend() {}, focus() {}, addEventListener(name, fn) { this.listeners[name] = fn; } });
+  const element = () => ({ textContent: '', hidden: false, disabled: false, checked: true, listeners: {}, firstChild: null, classList: { add() {} }, setAttribute() {}, appendChild() {}, append() {}, prepend() {}, replaceChildren() {}, focus() {}, addEventListener(name, fn) { this.listeners[name] = fn; } });
   const get = (id) => { if (!elements.has(id)) elements.set(id, element()); return elements.get(id); };
   const intervals = new Map(); let intervalId = 0, now = 0, pixel = 20, screen = 'treasure';
   const analyzerSource = fs.readFileSync(require('node:path').join(__dirname, '../js/analyze.js'), 'utf8');
@@ -155,6 +155,7 @@ function bridgeHarness(options = {}) {
   };
   const track = { getSettings: () => ({ displaySurface: options.surface || 'window' }), stop() {}, addEventListener() {} };
   const spoken = [];
+  const voicesUsed = [];
   const stored = {};
   const docListeners = {};
   // An animated overlay: the next frame differs while a check still runs.
@@ -166,7 +167,7 @@ function bridgeHarness(options = {}) {
     setInterval: (fn, ms) => { intervals.set(++intervalId, { fn, ms }); return intervalId; }, clearInterval: (id) => intervals.delete(id),
     navigator: Object.assign({ mediaDevices: { getDisplayMedia: async () => ({ getVideoTracks: () => [track], getTracks: () => [track] }) } }, options.safari ? {} : { userAgentData: { brands: [{ brand: 'Chromium', version: '130' }] } }),
     performance: { now: () => now }, createImageBitmap: async () => ({ close() {} }),
-    speechSynthesis: { cancel() {}, speak(u) { spoken.push(u.text); } }, SpeechSynthesisUtterance: class { constructor(text) { this.text = text; } },
+    speechSynthesis: { cancel() {}, speak(u) { spoken.push(u.text); voicesUsed.push(u.voice && u.voice.name); }, getVoices: () => options.voices || [], addEventListener() {} }, SpeechSynthesisUtterance: class { constructor(text) { this.text = text; } },
     document: {
       getElementById: get, querySelector: () => ({ prepend() {} }), addEventListener: (name, fn) => { docListeners[name] = fn; },
       documentElement: { classList: { add: (...names) => names.forEach((n) => classes.add(n)), remove: (...names) => names.forEach((n) => classes.delete(n)) } },
@@ -214,7 +215,7 @@ function bridgeHarness(options = {}) {
     fix() { rd.fixed = 0; state.isFresh = false; },
     get: (id) => get(id).textContent,
     stop: () => get('qt-stop').listeners.click(),
-    classes, calls, spoken, stored, elements,
+    classes, calls, spoken, voicesUsed, stored, elements,
     paste: () => docListeners.paste({ clipboardData: { items: [{ type: 'image/png' }] } }),
   };
 }
@@ -663,4 +664,41 @@ test('the iPad tab is only added in a Chromium browser, which can share a window
   assert.ok(chromium.elements.has('qt-start'), 'the tab is set up');
   const safari = bridgeHarness({ safari: true });
   assert.equal(safari.elements.has('qt-start'), false);
+});
+function rank(voices) {
+  const context = { window: {}, URLSearchParams, location: { search: '' } };
+  vm.runInNewContext(fs.readFileSync(sourcePath, 'utf8'), context);
+  return Array.from(context.window.TartarusQuickTime.rankVoices(voices), (v) => v.name);
+}
+// Regression guard: on a Mac whose system language isn't US English, Chrome
+// spoke the advice in Albert, the first en-US voice, a novelty one.
+test('the voice is never a novelty or robotic Mac voice', () => {
+  const mac = ['Albert', 'Bad News', 'Bubbles', 'Eddy (English (United States))', 'Fred', 'Kathy', 'Samantha', 'Whisper', 'Zarvox']
+    .map((name) => ({ name, lang: 'en-US' }));
+  assert.deepEqual(rank(mac), ['Samantha', 'Eddy (English (United States))']);
+});
+test('Premium beats Enhanced beats Google beats Samantha', () => {
+  const voices = [
+    { name: 'Samantha', lang: 'en-US' }, { name: 'Google US English', lang: 'en-US' },
+    { name: 'Samantha (Enhanced)', lang: 'en-US' }, { name: 'Ava (Premium)', lang: 'en_US' },
+  ];
+  assert.deepEqual(rank(voices), ['Ava (Premium)', 'Samantha (Enhanced)', 'Google US English', 'Samantha']);
+});
+test('only US English voices are offered', () => {
+  assert.deepEqual(rank([{ name: 'Daniel', lang: 'en-GB' }, { name: 'Milena', lang: 'ru-RU' }]), []);
+  assert.deepEqual(rank(undefined), []);
+});
+test('the advice is said in the best voice, or the one the player picked', async () => {
+  const voices = ['Albert', 'Samantha', 'Daniel'].map((name, i) => ({ name, lang: i === 2 ? 'en-GB' : 'en-US' }));
+  let bridge = bridgeHarness({ voices });
+  await bridge.start();
+  await bridge.screen({ board: 'A' });
+  assert.deepEqual(bridge.voicesUsed, ['Samantha']);
+  bridge.stop();
+  // A saved voice this Mac doesn't have: the best one instead.
+  bridge = bridgeHarness({ voices, storage: { 'qt-voice': 'Ava (Premium)' } });
+  await bridge.start();
+  await bridge.screen({ board: 'A' });
+  assert.deepEqual(bridge.voicesUsed, ['Samantha']);
+  bridge.stop();
 });

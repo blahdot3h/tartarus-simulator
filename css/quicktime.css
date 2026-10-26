@@ -24,6 +24,7 @@
 .qt-voice:has(input:checked)::after { content: 'on'; color: var(--moss); }
 .qt-voice:has(input:checked) .qt-voice-icon { background: var(--moss); box-shadow: 0 0 0 3px color-mix(in srgb, var(--moss) 25%, transparent); }
 .qt-voice:has(input:focus-visible) { outline: 2px solid var(--bone); outline-offset: 2px; }
+.qt-buttons select.qt-voice-pick { width: auto; max-width: 220px; }
 .qt-advice { margin: 10px 0; padding: 10px 12px; border-left: 3px solid var(--bone); background: color-mix(in srgb, var(--bone) 7%, transparent); color: var(--bone-hi); font-size: 19px; font-weight: 700; }
 .qt-advice:empty { display: none; }
 .qt-check, .qt-help { display: block; margin-top: 8px; color: var(--ash); font-size: 13px; }

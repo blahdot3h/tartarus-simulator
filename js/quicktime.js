@@ -135,7 +135,26 @@
     }
   }
   function endText(state) { return state && state.chain ? 'Cancel the consume, then End the day.' : 'Press End.'; }
-  window.TartarusQuickTime = { FrameGate, RecognitionLane, Recorder, barIntrusion, boardReadiness, contentRect, doubtfulRead, endText };
+  // The browser's own pick for en-US can be a novelty voice (Albert, on a Mac
+  // whose system language isn't US English), so the voice is picked here:
+  // Premium, then Enhanced, then Google's, then Samantha, then the rest.
+  // Novelty and old robotic Mac voices are never offered.
+  const NOVELTY_VOICES = new Set(['Albert', 'Bad News', 'Bahh', 'Bells', 'Boing', 'Bubbles', 'Cellos', 'Fred', 'Good News', 'Jester', 'Junior', 'Kathy', 'Organ', 'Ralph', 'Superstar', 'Trinoids', 'Whisper', 'Wobble', 'Zarvox']);
+  function voiceScore(voice) {
+    const name = String(voice.name || '');
+    if (/premium/i.test(name)) return 4;
+    if (/enhanced/i.test(name)) return 3;
+    if (/^Google\b/.test(name)) return 2;
+    return name.replace(/\s*\(.*$/, '') === 'Samantha' ? 1 : 0;
+  }
+  function rankVoices(voices) {
+    return Array.from(voices || [])
+      .filter((v) => /^en[-_]US$/i.test(v.lang || '') && !NOVELTY_VOICES.has(String(v.name || '').replace(/\s*\(.*$/, '')))
+      .map((v, i) => ({ v, i, s: voiceScore(v) }))
+      .sort((a, b) => b.s - a.s || a.i - b.i)
+      .map((x) => x.v);
+  }
+  window.TartarusQuickTime = { FrameGate, RecognitionLane, Recorder, barIntrusion, boardReadiness, contentRect, doubtfulRead, endText, rankVoices };
   if (typeof document === 'undefined' || typeof navigator === 'undefined') return;
   const params = new URLSearchParams(location.search);
   const A = window.TartarusAnalyzer;
@@ -159,7 +178,7 @@
     <div class="qt-side">
       <h2 class="az-h2">iPad: QuickTime or AirPlay</h2>
       <p class="az-scan-lede"><strong>By cable:</strong> open <strong>New Movie Recording</strong> in QuickTime with the iPad as its camera, press Connect and pick the <strong>Movie Recording</strong> window. <strong>Over Wi‑Fi:</strong> on the iPad, Control Centre → Screen Mirroring → this Mac, press Connect and pick the <strong>Entire Screen</strong> the iPad shows on. Play in English. The board is read by itself once the picture settles.</p>
-      <div class="qt-buttons"><button type="button" class="btn btn-primary" id="qt-start">Connect</button><label class="btn qt-voice" title="Say each move out loud, so your eyes can stay on the iPad"><input type="checkbox" id="qt-speak"><span class="qt-voice-icon" aria-hidden="true"></span>Voice</label><button type="button" class="btn" id="qt-stop" disabled>Stop</button><button type="button" class="btn" id="qt-rescan" disabled>Read again</button><button type="button" class="btn" id="qt-reload" hidden>Restart the helper</button></div>
+      <div class="qt-buttons"><button type="button" class="btn btn-primary" id="qt-start">Connect</button><label class="btn qt-voice" title="Say each move out loud, so your eyes can stay on the iPad"><input type="checkbox" id="qt-speak"><span class="qt-voice-icon" aria-hidden="true"></span>Voice</label><select class="qt-voice-pick" id="qt-voice-pick" aria-label="Voice to speak with" title="Which voice says the moves" hidden></select><button type="button" class="btn" id="qt-stop" disabled>Stop</button><button type="button" class="btn" id="qt-rescan" disabled>Read again</button><button type="button" class="btn" id="qt-reload" hidden>Restart the helper</button></div>
       <p class="az-scan-status" id="qt-status" role="status">No window connected yet.</p>
       <p class="qt-advice" id="qt-advice" aria-live="polite"></p>
       <label class="qt-check"><input type="checkbox" id="qt-fresh" checked> The next instrument offer starts a new run</label>
@@ -252,7 +271,48 @@
     spoken = key;
     // "cell 04" is shown padded but said "cell 4", not "zero four".
     // Chrome can drop an utterance spoken right after a cancel: cancel only a running one.
-    try { if (speechSynthesis.speaking) speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text.replace(/\bcell 0(\d)\b/g, 'cell $1')); u.lang = 'en-US'; speechSynthesis.speak(u); } catch (e) { /* no voice */ }
+    try { if (speechSynthesis.speaking) speechSynthesis.cancel(); speechSynthesis.speak(utterance(text.replace(/\bcell 0(\d)\b/g, 'cell $1'))); } catch (e) { /* no voice */ }
+  }
+  function utterance(text) {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'en-US';
+    const voice = pickedVoice();
+    if (voice) u.voice = voice;
+    return u;
+  }
+  // The voice picker: Best voice (the top of rankVoices), or one named voice.
+  // A saved voice this Mac doesn't have falls back to the best one.
+  let savedVoice = '';
+  try { savedVoice = localStorage.getItem('qt-voice') || ''; } catch (e) { /* private mode */ }
+  function rankedVoices() {
+    try { return typeof speechSynthesis === 'undefined' ? [] : rankVoices(speechSynthesis.getVoices()); } catch (e) { return []; }
+  }
+  function pickedVoice() {
+    const voices = rankedVoices();
+    return voices.find((v) => v.name === savedVoice) || voices[0] || null;
+  }
+  function fillVoices() {
+    const pick = $('qt-voice-pick');
+    if (!pick) return;
+    const voices = rankedVoices();
+    pick.hidden = !voices.length;
+    pick.replaceChildren(...[''].concat(voices.map((v) => v.name)).map((name) => {
+      const option = document.createElement('option');
+      option.value = name;
+      option.textContent = name || `Best voice (${voices.length ? voices[0].name : 'none'})`;
+      return option;
+    }));
+    pick.value = voices.some((v) => v.name === savedVoice) ? savedVoice : '';
+  }
+  if ($('qt-voice-pick') && typeof speechSynthesis !== 'undefined') {
+    fillVoices();
+    // Chrome lists its voices a moment after the page loads.
+    speechSynthesis.addEventListener('voiceschanged', fillVoices);
+    $('qt-voice-pick').addEventListener('change', (e) => {
+      savedVoice = e.target.value;
+      try { localStorage.setItem('qt-voice', savedVoice); } catch (err) { /* private mode */ }
+      try { speechSynthesis.cancel(); speechSynthesis.speak(utterance('Move to cell 3.')); } catch (err) { /* no voice */ }
+    });
   }
   let savedSpeak = null;
   try { savedSpeak = localStorage.getItem('qt-speak'); } catch (e) { /* private mode */ }

@@ -21,6 +21,9 @@ const EMPTIED = 'airplay-1400-emptied-door.png';
 const STATUS_OVERLAP = 'airplay-1400-status-view-overlap.png';
 const TWO_LINE_TIP = 'airplay-1400-tip-two-line-name.png';
 const CAGE_FIGHT = 'airplay-1400-badge-cagefight.png';
+// The iPad's screenshot of a run's last day (0 days until Riot), turned to
+// sRGB as the browser shows it: an orange glow lies over the screen's edges.
+const RIOT_GLOW = 'ipad-day0-riot-glow.png';
 
 // Regression guard: the objective "Undercurrents" wraps onto three lines,
 // and its third ("times Completed") passed for the "Torture Instrument"
@@ -123,4 +126,19 @@ test('the start card\'s badge is read on the iPad', { skip: missing(CAGE_FIGHT) 
   const other = S.scan(frame(NO_TIP), ref).badge;
   assert.ok(other, 'a badge');
   assert.equal(other.id, null);
+});
+
+// Regression guard: on the last day the riot's orange glow put about 1% of
+// orange on the frames of Normal "?" doors, which left them in doubt; the
+// cells were marked Check, so the iPad mode hid its advice and fell silent
+// (the user's run, 2026-10-26).
+test('the riot\'s glow on the last day leaves a Normal "?" door sure', { skip: missing(RIOT_GLOW) }, () => {
+  const r = S.scan(frame(RIOT_GLOW), REF);
+  assert.ok(r.ok);
+  assert.equal(r.days.days, 0);
+  for (const n of [7, 8, 13]) {
+    assert.equal(r.cells[n].shown.tier, 0, `cell ${n + 1}`);
+    assert.ok(r.cells[n].shown.conf >= 0.6, `cell ${n + 1} in doubt at ${r.cells[n].shown.conf}`);
+  }
+  assert.equal(r.cells[11].shown.tier, 1, 'cell 12 stays Magic');
 });

@@ -479,8 +479,11 @@
       return { tier: faint[2] > faint[1] ? 2 : 1, conf: 0.6, colored: colored / samples, bins, samples, faint: (faint[1] + faint[2]) / samples };
     }
     // A Normal's frame has no colored pixels at all, at every scale tested;
-    // the dimmest colored frame had 3%. A few stray ones leave it in doubt.
-    if (colored < 0.025 * samples) return { tier: 0, conf: colored < 0.008 * samples ? 0.85 : bright > 0.04 * samples ? 0.8 : 0.55, colored: colored / samples };
+    // the dimmest colored frame had 3%. A few stray ones leave it in doubt,
+    // unless all of them are orange: the riot's glow over the screen's edges
+    // on a run's last day put about 1% of orange on Normal frames (the
+    // user's iPad, 2026-10-26), and their doubt hid the advice.
+    if (colored < 0.025 * samples) return { tier: 0, conf: colored < 0.008 * samples ? 0.85 : bright > 0.04 * samples || bins[3] === colored ? 0.8 : 0.55, colored: colored / samples };
     let tier = 0;
     for (let t = 1; t < bins.length; t++) if (bins[t] > bins[tier]) tier = t;
     return { tier, conf: Math.min(1, 0.5 + bins[tier] / colored / 2), colored: colored / samples, bins, samples };

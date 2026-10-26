@@ -799,10 +799,14 @@
       }
     }
     let frame = null;
-    try {
-      if (imageCapture) frame = await imageCapture.grabFrame();
-    } catch (e) {
-      // Fall back to the video element.
+    // Once more after a moment when the window refuses a frame (one asked
+    // for while another was still coming).
+    for (let tries = 0; imageCapture && !frame && tries < 2; tries++) {
+      try {
+        frame = await imageCapture.grabFrame();
+      } catch (e) {
+        if (!tries) await new Promise((r) => setTimeout(r, 40));
+      }
     }
     try {
       if (!frame && video && video.readyState >= 2) frame = await createImageBitmap(video);
@@ -852,7 +856,7 @@
 
   // extra: what to tell with the frame (a retake: { retake: true }).
   async function captureNow(kind, extra) {
-    const frame = await grab();
+    const frame = await grabTurn();
     if (frame) setState({ frames: state.frames + 1 });
     emit('frame', Object.assign({ kind: kind || 'manual', hits: [], frame, blank: isBlank(frame), why: frame ? '' : whyNot(), time: new Date() }, extra || {}));
     return !!frame;

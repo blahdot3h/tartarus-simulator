@@ -1884,6 +1884,8 @@
     ctx.drawImage(source, 0, 0, w, h);
     reader.image = canvas;
     pictureAt = (opts && opts.takenAt) || Date.now();
+    // How the game's screen moved before Auto Screenshot Mode took it (js/capture.js settle-watch), for the reading's details.
+    reader.motion = (opts && opts.motion) || null;
     runScan(ctx.getImageData(0, 0, w, h), opts);
   }
 
@@ -3062,6 +3064,8 @@
     const r = reader.result;
     const rd = reader.reading;
     const lines = [`Reader ${SCRIPT_QUERY.replace(/^\?v=/, '') || 'local'}, ${reader.follow ? 'an Auto Screenshot Mode picture' : 'a screenshot'} of ${reader.image.width}×${reader.image.height}, read in ${(reader.ms / 1000).toFixed(1)} s.`];
+    const mo = reader.follow && reader.motion;
+    if (mo) lines.push(`Screen watch: ${mo.watched ? `taken ${(mo.watched / 1000).toFixed(2)} s after its line, once the screen settled` : 'taken at the timed wait'}; the screen moved up to ${mo.peak} against a flicker of ${mo.flicker}.`);
     // The Warden's Treasure isn't read from a picture: during it, the picture
     // is a board, from before it or seen behind it (reports 349, 363: taken
     // for a board read wrong).
@@ -3516,7 +3520,7 @@
     // Follow my game (js/auto.js, beta): read frames of the game, load
     // them, and ask, without the toasts a pasted screenshot gets.
     window.TartarusAnalyzer = {
-      readFrame: (bitmap, takenAt) => new Promise((resolve) => readBitmap(bitmap, { quiet: true, folded: true, onRead: resolve, takenAt })),
+      readFrame: (bitmap, takenAt, motion) => new Promise((resolve) => readBitmap(bitmap, { quiet: true, folded: true, onRead: resolve, takenAt, motion })),
       readPick: (bitmap, takenAt) => readPick(bitmap, takenAt),
       usePick: (read, fresh) => usePick(read, fresh),
       readTreasure: (bitmap) => readTreasure(bitmap),

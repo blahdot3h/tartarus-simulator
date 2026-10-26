@@ -388,7 +388,7 @@
   // from screen to screen).
   const FLICKER_MS = 2500;
   setInterval(async () => {
-    if (burst || watcher || (!imageCapture && !video) || state.window !== 'on') return;
+    if (burst || watcher || (!newest && !video) || state.window !== 'on') return;
     const a = await lookAt();
     if (!a || burst || watcher) return;
     await new Promise((r) => setTimeout(r, WATCH_MS));
@@ -402,19 +402,43 @@
   // Frames one at a time: a look and a picture never ask the window for
   // one together.
   let grabbing = Promise.resolve();
+  // A frame that doesn't come within 1.5 s (a minimized window sends none)
+  // gives up its turn: the ones after it aren't held up.
   function grabTurn() {
-    const p = grabbing.then(() => grab());
+    const p = grabbing.then(() => new Promise((resolve) => {
+      let late = false;
+      const timer = setTimeout(() => {
+        late = true;
+        resolve(null);
+      }, 1500);
+      grab().then((frame) => {
+        clearTimeout(timer);
+        // Too late for its turn: let go of it.
+        if (late) {
+          if (frame && frame.close) frame.close();
+        } else resolve(frame);
+      }, () => {
+        clearTimeout(timer);
+        resolve(null);
+      });
+    }));
     grabbing = p.catch(() => null);
     return p;
   }
+  // A look at the middle of the window, from the video: null on the app's
+  // shared screen (its crop is for pictures only), or before a frame plays.
   async function lookAt() {
-    const frame = await grabTurn();
+    if (surface !== 'window' || !mayCapture()) return null;
+    const frame = newest || (video && video.readyState >= 2 ? video : null);
     if (!frame) return null;
+    const fw = newest ? newest.displayWidth : video.videoWidth;
+    const fh = newest ? newest.displayHeight : video.videoHeight;
+    if (!fw || !fh) return null;
     try {
-      const sx = frame.width * 0.22;
-      const sy = frame.height * 0.05;
-      const sw = frame.width * 0.56;
-      const sh = frame.height * 0.9;
+      const sx = fw * 0.22;
+      const sy = fh * 0.05;
+      const sw = fw * 0.56;
+      const sh = fh * 0.9;
       const h = Math.max(8, Math.round((LOOK_W * sh) / sw));
       if (!lookCanvas) lookCanvas = typeof OffscreenCanvas === 'function' ? new OffscreenCanvas(LOOK_W, h) : document.createElement('canvas');
       lookCanvas.width = LOOK_W;
@@ -429,8 +453,6 @@
       return out;
     } catch (e) {
       return null;
-    } finally {
-      if (frame.close) frame.close();
     }
   }
   function stopWatch() {
@@ -439,7 +461,7 @@
   }
   // A line of the burst: the screen has to move after it, then settle.
   function watchBurst() {
-    if (!burst || !WATCHED.has(burst.kind) || (!imageCapture && !video)) return;
+    if (!burst || !WATCHED.has(burst.kind) || (!newest && !video)) return;
     if (!watcher) {
       watcher = { timer: 0, prev: null, hitAt: 0, moved: false, stillSince: 0, peak: 0 };
       watcher.timer = setTimeout(watchStep, 0);
@@ -485,15 +507,11 @@
     if (look) w.prev = look;
     w.timer = setTimeout(watchStep, WATCH_MS);
   }
-  // The share of the settle time is up: not while the screen is still
-  // moving, by at most 0.8 s more (a flicker misjudged as moving can't make
-  // pictures much later than before), and never past the whole settle time.
+  // The share of the settle time is up. The watch only ever brings a
+  // picture sooner: holding it back while the screen moved made the user's
+  // pictures later (their run of 2026-10-26: the game's flames and glows
+  // read as moving), so it isn't, until the watch is tuned on their runs.
   function timerFire() {
-    const b = burst;
-    if (b && watcher && watcher.moved && !watcher.stillSince && Date.now() - watcher.hitAt < Math.min(b.full, b.settle + 800)) {
-      b.timer = setTimeout(timerFire, WATCH_MS);
-      return;
-    }
     fire();
   }
   // #endregion
@@ -741,6 +759,7 @@
       track = null;
       surface = '';
       imageCapture = null;
+      dropNewest();
       setState({ window: 'off', windowSize: '', shared: '', note: 'Window sharing stopped.' });
     });
     // Chrome and Edge take a still frame only when a picture is due, and
@@ -754,8 +773,49 @@
       video.srcObject = stream;
       video.play().catch(() => {});
     }
+    keepNewest(track);
     const s = track.getSettings();
     setState({ window: 'on', windowSize: s.width ? `${s.width}×${s.height}` : '', shared: kind === 'monitor' ? 'screen' : 'window', note: '' });
+  }
+
+  // The window's newest frame, kept as frames arrive (Chrome and Edge): a
+  // look or a picture takes it at once, never waiting for the next one (the
+  // window sends frames only as it changes, so the newest is what it shows;
+  // a hidden page, like the desktop app's, keeps getting them). Read from a
+  // copy of the track; each older frame is let go as a new one comes.
+  let newest = null;
+  let newestReader = null;
+  function keepNewest(t) {
+    dropNewest();
+    if (typeof MediaStreamTrackProcessor !== 'function' || !t) return;
+    try {
+      const copy = t.clone();
+      const reader = new MediaStreamTrackProcessor({ track: copy }).readable.getReader();
+      newestReader = { reader, copy };
+      (async () => {
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (!newestReader || newestReader.reader !== reader) {
+            if (value) value.close();
+            break;
+          }
+          if (newest) newest.close();
+          newest = value;
+        }
+      })().catch(() => {});
+    } catch (e) {
+      newestReader = null;
+    }
+  }
+  function dropNewest() {
+    if (newestReader) {
+      newestReader.reader.cancel().catch(() => {});
+      newestReader.copy.stop();
+    }
+    newestReader = null;
+    if (newest) newest.close();
+    newest = null;
   }
 
   // The desktop app's crop for a shared screen (see crop above): set by the
@@ -772,6 +832,7 @@
     imageCapture = null;
     if (video) video.srcObject = null;
     video = null;
+    dropNewest();
     setState({ window: 'off', windowSize: '', shared: '' });
   }
 
@@ -799,6 +860,11 @@
       }
     }
     let frame = null;
+    try {
+      if (newest) frame = await createImageBitmap(newest);
+    } catch (e) {
+      frame = null;
+    }
     // Once more after a moment when the window refuses a frame (one asked
     // for while another was still coming).
     for (let tries = 0; imageCapture && !frame && tries < 2; tries++) {

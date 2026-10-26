@@ -139,7 +139,7 @@
         return;
       }
     }
-    const read = await A.readFrame(bitmap, m.takenAt);
+    const read = await A.readFrame(bitmap, m.takenAt, m.motion ? Object.assign({ watched: m.watched || 0 }, m.motion) : null);
     // Neither an offer nor a board: an offer in another language, maybe.
     if (!read.ok && offerMissed && A.langMissed) A.langMissed('instrument offer', bitmap, offerMissed);
     // A picture with no board in it: maybe the Warden's Treasure, read by

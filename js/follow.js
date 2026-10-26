@@ -28,7 +28,11 @@
   // screen at the end writes the day line too, with max=0, and is left out.
   const DEFAULT_RULES = [
     '# kind | pattern | settle ms  (one trigger a line; # starts a note)',
-    '# Tartarus Prison is S16 in the log. A run\'s objective, when it shows one:',
+    '# Tartarus Prison is S16 in the log. A run\'s contract card (Cage Fight,',
+    '# Iron Law, Tyranny, Opulence), when it shows one, before its objective:',
+    '# it changes which instruments to take.',
+    'objective | S16BoardThemePop Run | 1500',
+    '# A run\'s objective, when it shows one:',
     'objective | S16BoardTaskPop Run | 1500',
     '# The pick of 3 instruments, and after a re-roll:',
     'instruments | S16BoardRelicPop Run | 1500',

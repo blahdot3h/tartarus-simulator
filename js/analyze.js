@@ -2785,12 +2785,17 @@
       // The mouse pointer over a card's number hides its digit (report 318),
       // unless the lit cells settled it (report 360). Unsettled, that door is
       // marked Check: a guess, not a reading.
-      if (r.doors.hidden && r.doors.hidden.length && r.doors.lit) notes.push(`The mouse pointer covers the number on one card: the lit cells show it is cell ${L(r.doors.hidden[0])}.`);
+      if (r.doors.hidden && r.doors.hidden.length && r.doors.seen === 'place') {
+        // Told by its place in the row and its picture (js/scan.js missingDoor).
+        notes.push(`The mouse pointer covers a door card: by its place among the cards and its picture, it is cell ${r.doors.hidden.map(L).join(' and ')}. Check it.`);
+        r.doors.hidden.forEach((n) => checks.add(n));
+      } else if (r.doors.hidden && r.doors.hidden.length && r.doors.lit) notes.push(`The mouse pointer covers the number on one card: the lit cells show it is cell ${L(r.doors.hidden[0])}.`);
       else if (r.doors.hidden && r.doors.hidden.length) {
         notes.push(`The mouse pointer covers the number on the card read as ${r.doors.hidden.map((n) => `cell ${L(n)}`).join(' and ')}: check that door.`);
         r.doors.hidden.forEach((n) => checks.add(n));
       }
       else if (r.doors.conf < 0.6) notes.push('Today’s doors were hard to read: check them.');
+      if (r.doors.seen === 'missing') notes.push('A door card couldn’t be read (the mouse pointer may be over it): today has a door these don’t show. Move the pointer off the cards, or add it.');
     } else if (!r.decision && !r.statusView && base.step === 'patrol' && (base.dest || []).length && m.day === base.day && m.warden === base.warden) {
       // No door cards and no buttons, on the same day with the warden where
       // it was: the cards haven't come back yet (report 334: pictured just

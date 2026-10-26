@@ -438,7 +438,7 @@
   // js/auto.js). It goes by the browser's BroadcastChannel, which reaches
   // only this site's own pages in this browser. Nothing is uploaded.
   async function onFrame(f) {
-    const c = { id: nextId++, time: f.time, kind: f.kind, hits: f.hits || [], frame: !!f.frame, why: f.why || '', thumb: '', full: '', sent: false, read: null, state: '', asked: false, note: '', waited: f.waited || 0, wholeWait: f.full || 0, retake: !!f.retake, of: f.of || 0, key: f.key || f.kind, at: Date.now() };
+    const c = { id: nextId++, time: f.time, kind: f.kind, hits: f.hits || [], frame: !!f.frame, why: f.why || '', thumb: '', full: '', sent: false, read: null, state: '', asked: false, note: '', waited: f.waited || 0, wholeWait: f.full || 0, retake: !!f.retake, of: f.of || 0, key: f.key || f.kind, watched: f.watched || 0, motion: f.motion || null, at: Date.now() };
     lastPicture = { at: Date.now(), kind: c.kind, ok: c.frame, why: c.why };
     tell();
     captures.unshift(c);
@@ -482,7 +482,7 @@
           // gifts: the Treasure's counts (Rainbows, picks confirmed).
           // takenAt: when the picture was taken (the box over the game counts
           // a picture only from after the last click in the game).
-          channel.postMessage({ type: 'frame', to: to.id, from: me, id: c.id, kind: c.kind, fresh, after, treasureView, quick, takenAt: c.time ? new Date(c.time).getTime() : Date.now(), gifts: Object.assign({}, gifts), pixels: pix, blob });
+          channel.postMessage({ type: 'frame', to: to.id, from: me, id: c.id, kind: c.kind, fresh, after, treasureView, quick, watched: c.watched, motion: c.motion, takenAt: c.time ? new Date(c.time).getTime() : Date.now(), gifts: Object.assign({}, gifts), pixels: pix, blob });
           c.sent = true;
         }
       }

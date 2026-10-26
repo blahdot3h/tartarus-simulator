@@ -1263,9 +1263,86 @@
     return [left, right];
   }
 
+  // The colours of a picture: the share of strongly coloured pixels, and
+  // how they split over twelve hues (summing to 1).
+  function colourMix(img, x0, y0, x1, y1) {
+    const bins = new Array(12).fill(0);
+    let n = 0;
+    let coloured = 0;
+    for (let y = Math.max(0, Math.round(y0)); y < Math.min(img.height, y1); y += 2) {
+      for (let x = Math.max(0, Math.round(x0)); x < Math.min(img.width, x1); x += 2) {
+        const [h, sat, v] = hsvAt(img, x, y);
+        n += 1;
+        if (sat > 0.35 && v > 0.3) {
+          bins[Math.floor(h / 30) % 12] += 1;
+          coloured += 1;
+        }
+      }
+    }
+    return { share: n ? coloured / n : 0, mix: bins.map((b) => (coloured ? b / coloured : 0)) };
+  }
+  const mixApart = (a, b) => a.mix.reduce((t, v, i) => t + Math.abs(v - b.mix[i]), 0);
+
+  // A door card the reader couldn't read: the mouse pointer over its number
+  // (the user's run of 2026-10-26: "Go to Cell 6" with the pointer on the
+  // 6, the card skipped and the Legendary Lion's consume never weighed).
+  // The day's doors come from the six cells clockwise ahead of the warden,
+  // and the cards stand in that order, so the card lies between its
+  // neighbours' cells. A locked cell that's a door is lit. The office's card
+  // is read by its words, so it's never the one. If that leaves more than
+  // one cell, the card's picture shows its cell: a plain door for a locked
+  // cell, else the inmate, whose colours (glow, jaws) are matched against
+  // each portrait. -1 when it can't be told; and when the cards read don't
+  // stand within reach of the warden (the warden misread), it isn't tried.
+  // Checked on 410 of the user's saved mornings, each card hidden in turn.
+  // The cells a numbered card could be, by its place (see missingDoor);
+  // null when the cards read don't stand within reach of the warden.
+  function doorCandidates(img, cellReads, warden, named, after, before) {
+    if (!cellReads || warden == null || warden < 0) return null;
+    const steps = (n) => (n - warden + 16) % 16;
+    if ([...named].some((n) => steps(n) < 1 || steps(n) > 6)) return null;
+    const lo = after == null ? 0 : steps(after);
+    const hi = before == null ? 7 : steps(before);
+    // Lit, against this picture's own doors: a screen still fading in is
+    // dim all over (the user's morning of 2026-10-17: a door at 33), so a
+    // locked cell the cards name sets how lit a door is here.
+    const plain = (c) => c && c.kind === 'locked' && (!c.shown || c.nest);
+    const known = [...named].filter((n) => plain(cellReads[n])).map((n) => cellLight(img, cellReads[n]));
+    const litAt = known.length ? Math.min(40, 0.8 * Math.min(...known)) : 40;
+    const cands = [];
+    for (let n = 0; n < 16; n++) {
+      const st = steps(n);
+      if (st < 1 || st > 6 || st <= lo || st >= hi || named.has(n)) continue;
+      if (n === 0) continue;
+      const c = cellReads[n];
+      if (!c) continue;
+      if (plain(c) && cellLight(img, c) < litAt) continue;
+      cands.push(c);
+    }
+    return cands;
+  }
+  function missingDoor(img, cellReads, warden, named, after, before, art) {
+    const cands = doorCandidates(img, cellReads, warden, named, after, before);
+    if (!cands) return -1;
+    if (cands.length === 1) return cands[0].n;
+    if (!cands.length || !art) return -1;
+    // A plain door in the card's picture: a locked cell with nothing on it.
+    if (art.share < 0.03) {
+      const doors = cands.filter((c) => c.kind === 'locked' && !c.shown && !c.event);
+      return doors.length === 1 ? doors[0].n : -1;
+    }
+    // Else what shows on it in colour: an inmate, or a door's event or
+    // scouted inmate.
+    const faces = cands.filter((c) => c.kind === 'inmate' || (c.kind === 'locked' && (c.shown || c.event)));
+    if (faces.length === 1) return faces[0].n;
+    const scored = faces.map((c) => ({ n: c.n, d: mixApart(art, colourMix(img, c.x - 30 * c.k, c.y - 80 * c.k, c.x + 30 * c.k, c.y - 12 * c.k)) })).sort((a, b) => a.d - b.d);
+    return scored.length && (scored.length === 1 || scored[1].d - scored[0].d >= 0.4) ? scored[0].n : -1;
+  }
+
   // foreign: the game isn't in English (the player's setting), so cards in
-  // another language are looked for by their numbers.
-  function readDoors(img, gray, loc, ref, foreign, cellReads) {
+  // another language are looked for by their numbers. warden: the warden's
+  // cell, for a card that couldn't be read (missingDoor).
+  function readDoors(img, gray, loc, ref, foreign, cellReads, warden) {
     let cards = doorCards(img, loc, gray, ref);
     let any = false;
     // Another language's cards: their numbers only (report 319).
@@ -1354,9 +1431,64 @@
         lit = true;
       }
     }
+    // The cards stand in a row centred under the board, about 1.9 cells
+    // apart: three at -1.9, 0 and 1.9 cells from the middle, two at -0.95
+    // and 0.95. Each card's place in it, from its text.
+    const [mx] = at(loc, 2.5, 3);
+    const pitch = scaleAt(loc, 2.5, 3) * 119.45;
+    const placed = cards.map((c, i) => ({ x: (c.p.x0 + c.p.x1) / 2, n: cells[i], i }));
+    if (cards.office) placed.push({ x: (cards.office.x0 + cards.office.x1) / 2, n: 0, i: cells.length - 1 });
+    placed.sort((a, b) => a.x - b.x);
+    const slotOf = (x) => [-1.9, 0, 1.9].findIndex((v) => Math.abs((x - mx) / pitch - v) < 0.4);
+    const artAt = (x) => colourMix(img, x - 0.27 * pitch, boxes[0][1] - 0.6 * pitch, x + 0.27 * pitch, boxes[0][1] - 0.1 * pitch);
+    // A card under the pointer whose cell the lit cells didn't settle: by
+    // its place and picture.
+    let seen = '';
+    let added = 0; // a card found by its place alone
+    if (guess >= 0 && !lit && warden != null) {
+      const k = placed.findIndex((q) => q.n === hidden[0]);
+      const named = new Set(cells.filter((n) => n !== hidden[0]));
+      const after = k > 0 ? placed[k - 1].n : null;
+      const before = k + 1 < placed.length ? placed[k + 1].n : null;
+      // Its number may still have read right under the pointer (the user's
+      // morning of 2026-10-17: "Go to Cell 12" read as 12): it stands when
+      // it could be that door, and is replaced only when it couldn't.
+      // By place alone: within reach of the warden, between its neighbours.
+      const steps = (m) => (m - warden + 16) % 16;
+      const st = steps(hidden[0]);
+      const fits = st >= 1 && st <= 6 && (after == null || st > steps(after)) && (before == null || st < steps(before));
+      const n = k < 0 || fits ? -1 : missingDoor(img, cellReads, warden, named, after, before, artAt(placed[k].x));
+      if (n >= 0) {
+        cells[cells.indexOf(hidden[0])] = n;
+        hidden[0] = n;
+        seen = 'place';
+      }
+    }
+    // Two cards standing where three would: the third wasn't read at all.
+    if (placed.length === 2 && placed.every((q) => slotOf(q.x) >= 0) && slotOf(placed[0].x) !== slotOf(placed[1].x)) {
+      const free = [0, 1, 2].find((v) => !placed.some((q) => slotOf(q.x) === v));
+      const x = mx + [-1.9, 0, 1.9][free] * pitch;
+      const left = placed.filter((q) => q.x < x);
+      const right = placed.filter((q) => q.x > x);
+      // The office's card, its words not read as one ("Go to Interrogation
+      // Room", wrapped, the user's morning of 2026-10-17): text far longer
+      // than "Go to Cell N" in that place. The pointer can't hide it all.
+      const h = cards[0].h;
+      const wide = !cards.office && textLines(img, x - 0.9 * pitch, boxes[0][1] - 1.5 * h, x + 0.9 * pitch, boxes[0][3] + 2.5 * h, { minH: 6, maxH: Math.max(48, img.height * 0.07), r: Math.max(3, Math.round(h * 0.6)) })
+        .some((line) => line.pieces.some((p) => Math.abs(p.glyphs[0].h - h) < 0.35 * h && (p.x1 - p.x0) > 9 * h));
+      const n = wide ? 0 : missingDoor(img, cellReads, warden, new Set(cells), left.length ? left[left.length - 1].n : null, right.length ? right[0].n : null, artAt(x));
+      if (n >= 0) {
+        const w = boxes[0][2] - boxes[0][0];
+        cells.push(n);
+        boxes.push([x - w / 2, boxes[0][1], x + w / 2, boxes[0][3]]);
+        hidden.push(n);
+        seen = 'place';
+        added = 1;
+      } else seen = 'missing';
+    }
     // Settled by the lit cells, the hidden card's own reading doesn't count.
     const shaky = lit ? read.some((r, i) => r.value - 1 !== guess && r.value !== options[i][0].value) : moved;
-    return { cells, conf: Math.max(0.1, Math.min(1, (score - 0.3) * 1.6)) * (cells.length === read.length + (cards.office ? 1 : 0) ? 1 : 0.4) * (shaky ? 0.55 : 1) * (hidden.length && !lit ? 0.4 : 1), boxes, hidden, lit };
+    return { cells, conf: Math.max(0.1, Math.min(1, (score - 0.3) * 1.6)) * (cells.length - added === read.length + (cards.office ? 1 : 0) ? 1 : 0.4) * (shaky ? 0.55 : 1) * (hidden.length && !lit && !seen ? 0.4 : 1), boxes, hidden, lit, seen };
   }
 
   // Doors lead to different cells, so two cards can't read the same number
@@ -2188,7 +2320,26 @@
     const row = ends.some((e) => lefts.some((l) => Math.abs(l.mid - e.mid) < e.h / 2 && l.x1 < e.x0 && e.x0 - l.x1 < 30 * e.h) || (consume && redX < e.x0 && e.x0 - redX < 30 * e.h));
     if (!title && !(row && (consume || replace))) return null;
     if (office) return { office: true, replace: false, consume: false, end: false, title };
-    return { replace, consume, end, title, red: Math.round(1000 * red) / 1000 };
+    // How many cards, by where their labels are. The row is centred under
+    // the board, a card about 1.9 cells on: with three, Replace's label is
+    // in the middle and End's starts 1.75 cells right of it; with two,
+    // Replace's is a cell left and End's starts 0.8 right. Three cards are
+    // Consume, Replace and End: a Consume card still fading in can be too
+    // dim for its red (the user's run of 2026-10-25, pictures 44 and 47
+    // read as Replace, End, so the advice left Consume out), and a Replace
+    // label too dim to read (then the box over the game sat between cards). Each label is
+    // read at several sizes, so they vote; End alone needs two votes (a
+    // stray short mark sat where it would be on 7 of 425 saved rows).
+    const [cx] = at(loc, 2.5, 3);
+    const pitch = scaleAt(loc, 2.5, 3) * 119.45;
+    const reps = labels.filter((l) => l.red < 0.01).map((l) => ((l.x0 + l.x1) / 2 - cx) / pitch);
+    const endsAt = ends.map((e) => (e.x0 - cx) / pitch);
+    const repMid = reps.filter((v) => Math.abs(v) < 0.45).length;
+    const endFar = endsAt.filter((v) => v > 1.3 && v < 2.2).length;
+    const repLeft = reps.filter((v) => v > -1.45 && v < -0.5).length;
+    const endNear = endsAt.filter((v) => v > 0.5 && v < 1.25).length;
+    const three = repMid + endFar > repLeft + endNear && (repMid > 0 || endFar >= 2);
+    return { replace: replace || three, consume: consume || three, end, title, red: Math.round(1000 * red) / 1000 };
   }
 
   // ---------- Everything ----------
@@ -2220,7 +2371,7 @@
     // An open cell can hold an event beside its inmate (the cell popup's
     // "Can trigger Prison Incident"): 8 saved screenshots show one.
     for (const n of findEvents(img, loc, cells, warden)) if (cells[n].kind === 'locked' || cells[n].kind === 'inmate') cells[n].event = true;
-    const doors = readDoors(img, sharp, loc, ref, !!(opts && opts.lang && opts.lang !== 'en'), cells);
+    const doors = readDoors(img, sharp, loc, ref, !!(opts && opts.lang && opts.lang !== 'en'), cells, warden ? warden.cell : null);
     const days = readDays(img, sharp, loc, ref);
     const tools = readTools(img, loc, ref);
     const badge = readBadge(img, tools.label, ref);
@@ -2262,7 +2413,7 @@
     return { ok: true, loc, cells, warden, doors, days, tools, badge, chromatic, objective, chain, decision, statusView, notes, ms: Date.now() - t0 };
   }
 
-  const api = { scan, scanPick, pickArtBox, pickRerollShown, locateBoard, readCell, findWarden, findToolIcons, findToolTip, readDoors, readDays, doorCards, dayNumber, prefixVector, textLines, glyphVector, faceVector, artFeature, similarity, hsv, blobs, at, gridOf, scaleAt, grayOf, blur, RING, H0, ARROW, FACE, GLYPH, locateByLabels, readChainScreen, readDecision, readObjectiveTitle, withPanelIcons, badgeBox, badgePlace, readBadge };
+  const api = { scan, scanPick, pickArtBox, pickRerollShown, locateBoard, readCell, findWarden, findToolIcons, findToolTip, readDoors, readDays, doorCards, dayNumber, prefixVector, textLines, glyphVector, faceVector, artFeature, similarity, hsv, blobs, at, gridOf, scaleAt, grayOf, blur, RING, H0, ARROW, FACE, GLYPH, locateByLabels, readChainScreen, readDecision, readObjectiveTitle, withPanelIcons, badgeBox, badgePlace, readBadge, missingDoor, colourMix, cellLight };
   if (typeof module === 'object' && module.exports) module.exports = api;
   root.TartarusScan = api;
 })(typeof window !== 'undefined' ? window : typeof self !== 'undefined' ? self : globalThis);

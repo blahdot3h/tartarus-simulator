@@ -28,7 +28,11 @@
   // screen at the end writes the day line too, with max=0, and is left out.
   const DEFAULT_RULES = [
     '# kind | pattern | settle ms  (one trigger a line; # starts a note)',
-    '# Tartarus Prison is S16 in the log. A run\'s objective, when it shows one:',
+    '# Tartarus Prison is S16 in the log. A run\'s contract card (Cage Fight,',
+    '# Iron Law, Tyranny, Opulence), when it shows one, before its objective:',
+    '# it changes which instruments to take.',
+    'objective | S16BoardThemePop Run | 1500',
+    '# A run\'s objective, when it shows one:',
     'objective | S16BoardTaskPop Run | 1500',
     '# The pick of 3 instruments, and after a re-roll:',
     'instruments | S16BoardRelicPop Run | 1500',
@@ -434,7 +438,7 @@
   // js/auto.js). It goes by the browser's BroadcastChannel, which reaches
   // only this site's own pages in this browser. Nothing is uploaded.
   async function onFrame(f) {
-    const c = { id: nextId++, time: f.time, kind: f.kind, hits: f.hits || [], frame: !!f.frame, why: f.why || '', thumb: '', full: '', sent: false, read: null, state: '', asked: false, note: '' };
+    const c = { id: nextId++, time: f.time, kind: f.kind, hits: f.hits || [], frame: !!f.frame, why: f.why || '', thumb: '', full: '', sent: false, read: null, state: '', asked: false, note: '', waited: f.waited || 0, wholeWait: f.full || 0, retake: !!f.retake, of: f.of || 0, key: f.key || f.kind, watched: f.watched || 0, motion: f.motion || null, at: Date.now() };
     lastPicture = { at: Date.now(), kind: c.kind, ok: c.frame, why: c.why };
     tell();
     captures.unshift(c);
@@ -471,8 +475,14 @@
           const after = c.kind === 'treasure' ? treasureAfter(c.hits) : '';
           // treasureView: the board, seen while a Warden's Treasure waits.
           const treasureView = c.kind === 'board' && treasureViewed(c.hits);
+          // quick: a board taken before its whole settle time, taken again
+          // if it shows nothing to click yet (judge): the analyzer waits for
+          // that one rather than advise on a screen still fading in.
+          const quick = quickBoard(c);
           // gifts: the Treasure's counts (Rainbows, picks confirmed).
-          channel.postMessage({ type: 'frame', to: to.id, from: me, id: c.id, kind: c.kind, fresh, after, treasureView, gifts: Object.assign({}, gifts), pixels: pix, blob });
+          // takenAt: when the picture was taken (the box over the game counts
+          // a picture only from after the last click in the game).
+          channel.postMessage({ type: 'frame', to: to.id, from: me, id: c.id, kind: c.kind, fresh, after, treasureView, quick, watched: c.watched, motion: c.motion, takenAt: c.time ? new Date(c.time).getTime() : Date.now(), gifts: Object.assign({}, gifts), pixels: pix, blob });
           c.sent = true;
         }
       }
@@ -493,7 +503,79 @@
     if (m.read) c.read = m.read;
     if (m.state) c.state = m.state;
     if (m.asked) c.asked = true;
+    judge(c, m);
     renderCaptures();
+  }
+
+  // Pictures come as soon as they can (js/capture.js waits a share of each
+  // trigger's settle time); one taken too soon is taken again, and its kind
+  // waits longer from then on (the user: "only make the screenshots slower
+  // if we start seeing misreads or bad screenshots"). Too soon: the analyzer
+  // couldn't read it, or read it much less surely than the last board; or it
+  // shows the same board as before the move, before the board changed (taken
+  // again, but its kind not slowed: a move can leave the board as it was).
+  // A picture that was used, and read surely, eases its kind's wait back.
+  let lastSure = null; // the last board's unsure cells
+  let lastSig = ''; // and its signature
+  // A board picture taken before its whole settle time, which judge takes
+  // again if it shows nothing to click.
+  const quickBoard = (c) => c.kind === 'board' && !c.retake && c.waited > 0 && c.wholeWait > c.waited && typeof C.slower === 'function';
+  // A board with nothing to click on it: no door cards, no decision cards,
+  // no meal to pick, no Prison Status view. The game's screens fade in
+  // (the user's run of 2026-10-25: a new day's door cards still too dim to
+  // read, so Replace was advised where the doors were coming).
+  const bare = (r) => r.ok && r.controls === false && !r.chain && !r.statusView && !r.treasure;
+  function judge(c, m) {
+    if (c.judged || !c.waited || !c.wholeWait || c.kind === 'manual' || typeof C.slower !== 'function') return;
+    const r = m.read;
+    // A retake waited the whole time already: it tells what the board looks
+    // like now (one that fails too is likely no board at all), and whether
+    // the picture before it came too soon: it showed nothing to click, or
+    // the board as before the move, and this one shows more.
+    if (c.retake) {
+      if (r && r.ok) {
+        c.judged = true;
+        const first = captures.find((x) => x.id === c.of);
+        if (first && ((first.bare && (r.controls || r.chain)) || (first.same && r.sig && r.sig !== first.sig))) C.slower(first.key);
+        lastSure = Number(r.unsure) || 0;
+        if (r.sig) lastSig = r.sig;
+      }
+      return;
+    }
+    // A failed read can still be used another way (the Warden's Treasure):
+    // that's judged a moment later, by whether it was used.
+    if (r && !r.ok && !r.skipped && !c.failTimer) {
+      c.failTimer = setTimeout(() => {
+        if (c.judged || c.state === 'used') return;
+        c.judged = true;
+        C.slower(c.key);
+        retake(c);
+      }, 700);
+      return;
+    }
+    if (!r || !r.ok) return;
+    c.judged = true;
+    clearTimeout(c.failTimer);
+    const unsure = Number(r.unsure) || 0;
+    const shaky = lastSure !== null && unsure >= lastSure + 3;
+    const same = c.kind === 'board' && !!r.sig && r.sig === lastSig;
+    // Nothing to click yet: taken again, the wait made longer only if that
+    // one shows more (a move can end on such a board).
+    c.bare = quickBoard(c) && bare(r);
+    c.same = same;
+    c.sig = r.sig || '';
+    if (shaky) C.slower(c.key);
+    else if (!same && !c.bare) C.faster(c.key);
+    if (shaky || same || c.bare) retake(c);
+    if (c.bare) return;
+    lastSure = unsure;
+    if (r.sig) lastSig = r.sig;
+  }
+  // Taken again once the whole settle time has passed since the trigger.
+  function retake(c) {
+    if (c.retake || c.waited >= c.wholeWait) return;
+    const left = Math.max(0, c.wholeWait - c.waited - (Date.now() - c.at));
+    setTimeout(() => C.captureNow(c.kind, { retake: true, of: c.id, key: c.key, waited: c.wholeWait, full: c.wholeWait }), left);
   }
 
   // #endregion

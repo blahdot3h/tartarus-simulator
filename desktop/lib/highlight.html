@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Tartarus Highlight</title>
+<style>
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; pointer-events: none; }
+  #box {
+    position: absolute;
+    display: none;
+    box-sizing: border-box;
+    border: 3px solid #3fe08a;
+    border-radius: 6px;
+    box-shadow: 0 0 10px 2px rgb(63 224 138 / 0.75), inset 0 0 8px 1px rgb(63 224 138 / 0.45);
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes pulse { 50% { box-shadow: 0 0 18px 5px rgb(63 224 138 / 0.9), inset 0 0 12px 2px rgb(63 224 138 / 0.6); } }
+</style>
+</head>
+<body>
+<div id="box" aria-hidden="true"></div>
+<script>
+  // The box the shell sends, where it says (this window covers the game).
+  const el = document.getElementById('box');
+  window.TartarusHighlight.onBox((d) => {
+    const b = d && d.box;
+    if (!b) {
+      el.style.display = 'none';
+      return;
+    }
+    Object.assign(el.style, { display: 'block', left: b.x + 'px', top: b.y + 'px', width: b.w + 'px', height: b.h + 'px' });
+    el.title = d.label || '';
+  });
+</script>
+</body>
+</html>

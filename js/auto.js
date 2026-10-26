@@ -107,7 +107,7 @@
       // re-roll is the same offer again.
       pickFresh = !!m.fresh || (before === 'instruments' && pickFresh);
       const fresh = pickFresh;
-      const read = await A.readPick(bitmap);
+      const read = await A.readPick(bitmap, m.takenAt);
       if (read.ok) {
         answer({ read });
         if (read.unsure && A.langMissed) A.langMissed('instrument offer', bitmap, `${read.unsure} of the cards not read`);
@@ -124,9 +124,10 @@
     // A picture the log didn't name (Take a picture now) may be the
     // instrument offer: at least two of its cards read surely, which no
     // board does. It starts a run unless a board came in the last few
-    // minutes (an objective's reward comes mid-run).
-    if (m.kind !== 'board') {
-      const pick = await A.readPick(bitmap);
+    // minutes (an objective's reward comes mid-run). Not an offer's own
+    // picture again: it was just read as one (each read takes a while).
+    if (m.kind !== 'board' && m.kind !== 'instruments') {
+      const pick = await A.readPick(bitmap, m.takenAt);
       const sure = pick.ok ? pick.cards.map((c) => c.conf).sort((a, b) => b - a)[1] : 0;
       if (sure >= 0.5) {
         answer({ read: pick });
@@ -138,7 +139,7 @@
         return;
       }
     }
-    const read = await A.readFrame(bitmap);
+    const read = await A.readFrame(bitmap, m.takenAt, m.motion ? Object.assign({ watched: m.watched || 0 }, m.motion) : null);
     // Neither an offer nor a board: an offer in another language, maybe.
     if (!read.ok && offerMissed && A.langMissed) A.langMissed('instrument offer', bitmap, offerMissed);
     // A picture with no board in it: maybe the Warden's Treasure, read by
@@ -152,6 +153,12 @@
       }
     }
     answer({ read });
+    // A board taken before its whole settle time with nothing to click on
+    // it yet (no door cards, no decision cards, no meal to pick): the
+    // screen is still fading in (the user's run of 2026-10-25: a new day's
+    // doors too dim to read, and Replace advised). follow.html takes it
+    // again at the whole time; the advice waits for that one.
+    if (m.quick && read.ok && read.controls === false && !read.chain && !read.statusView && !m.treasureView) return;
     // The board behind a Warden's Treasure that couldn't be read: say so,
     // rather than ask for View Prison Status again.
     if (!read.ok && m.treasureView && A.toast) A.toast('The board behind the Warden’s Treasure couldn’t be read from that picture. View it again a little longer, or press Advise with the board as it is.', 'bad');

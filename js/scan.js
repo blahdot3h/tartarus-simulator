@@ -1767,10 +1767,12 @@
       if (!first) continue;
       // A long name wraps onto a second line, set close under the first
       // ("Ferocious Beast's Ravenous Chains", the user's run, 2026-10-25);
-      // "Condition" sits further down, under the divider.
+      // "Condition" sits further down, under the divider (2.3 letter heights
+      // under the name). The second line can sit 0.9 letter heights under
+      // the first (the same name, the user's run, 2026-10-30).
       const name = [first];
       for (const l of lines.slice(1)) {
-        if (l.y0 - Math.max(...name.map((n) => n.y1)) > 0.6 * first.h || name.length >= 3) break;
+        if (l.y0 - Math.max(...name.map((n) => n.y1)) > 1.2 * first.h || name.length >= 3) break;
         name.push(l);
       }
       const tx0 = Math.min(...name.flatMap((l) => l.pieces.map((p) => p.x0))), tx1 = Math.max(...name.flatMap((l) => l.pieces.map((p) => p.x1)));

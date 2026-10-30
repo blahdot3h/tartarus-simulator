@@ -20,6 +20,8 @@ const SMALL = 'airplay-1400-scratched-normal.png';
 const EMPTIED = 'airplay-1400-emptied-door.png';
 const STATUS_OVERLAP = 'airplay-1400-status-view-overlap.png';
 const TWO_LINE_TIP = 'airplay-1400-tip-two-line-name.png';
+// The same name, its second line 0.9 letter heights under the first.
+const TWO_LINE_GAP = 'airplay-1400-tip-two-line-wide-gap.png';
 const CAGE_FIGHT = 'airplay-1400-badge-cagefight.png';
 // The iPad's screenshot of a run's last day (0 days until Riot), turned to
 // sRGB as the browser shows it: an orange glow lies over the screen's edges.
@@ -158,4 +160,15 @@ test('a tusk marker under a Normal\'s portrait leaves it Normal', { skip: missin
   assert.equal(r.cells[10].tier, 0, 'cell 11 is Normal');
   assert.equal(r.cells[12].tier, 1, 'cell 13 stays Magic');
   assert.equal(r.cells[4].tier, 3, 'cell 05 stays Legendary');
+});
+
+// Regression guard: the tip's name wrapped onto a second line 0.9 letter
+// heights under the first, past the 0.6 the reader allowed, so only
+// "Ferocious Beast's" was read, which isn't an instrument, and the iPad
+// mode gave up on the run's instruments (the user's run, 2026-10-30).
+test('a two-line name set further apart is still read whole', { skip: missing(TWO_LINE_GAP) }, () => {
+  const tip = S.findToolTip(frame(TWO_LINE_GAP));
+  assert.ok(tip, 'a tip');
+  assert.ok(tip.title[3] >= 169, `title ${tip.title} holds the second line of the name`);
+  assert.ok(tip.title[3] < 190, `title ${tip.title} stops above "Condition"`);
 });

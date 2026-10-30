@@ -20,10 +20,15 @@ const SMALL = 'airplay-1400-scratched-normal.png';
 const EMPTIED = 'airplay-1400-emptied-door.png';
 const STATUS_OVERLAP = 'airplay-1400-status-view-overlap.png';
 const TWO_LINE_TIP = 'airplay-1400-tip-two-line-name.png';
+// The same name, its second line 0.9 letter heights under the first.
+const TWO_LINE_GAP = 'airplay-1400-tip-two-line-wide-gap.png';
 const CAGE_FIGHT = 'airplay-1400-badge-cagefight.png';
 // The iPad's screenshot of a run's last day (0 days until Riot), turned to
 // sRGB as the browser shows it: an orange glow lies over the screen's edges.
 const RIOT_GLOW = 'ipad-day0-riot-glow.png';
+// A Normal Mammoth with jaws and a tusk marker under its portrait (cell 11),
+// next to a Magic one with the same marks (cell 13).
+const TUSK_NORMAL = 'airplay-1400-tusk-normal.png';
 
 // Regression guard: the objective "Undercurrents" wraps onto three lines,
 // and its third ("times Completed") passed for the "Torture Instrument"
@@ -141,4 +146,29 @@ test('the riot\'s glow on the last day leaves a Normal "?" door sure', { skip: m
     assert.ok(r.cells[n].shown.conf >= 0.6, `cell ${n + 1} in doubt at ${r.cells[n].shown.conf}`);
   }
   assert.equal(r.cells[11].shown.tier, 1, 'cell 12 stays Magic');
+});
+
+// Regression guard: the tusk marker under a Normal's portrait lies on the
+// frame's foot, and its orange (36 of 180 samples there, none on the sides)
+// read the inmate as Legendary; the jaws over it then didn't fit, the cell
+// was marked Check and the iPad mode hid its advice (the user's run,
+// 2026-10-29).
+test('a tusk marker under a Normal\'s portrait leaves it Normal', { skip: missing(TUSK_NORMAL) }, () => {
+  const r = S.scan(frame(TUSK_NORMAL), REF);
+  assert.ok(r.ok);
+  assert.equal(r.cells[10].beast, 'mammoth');
+  assert.equal(r.cells[10].tier, 0, 'cell 11 is Normal');
+  assert.equal(r.cells[12].tier, 1, 'cell 13 stays Magic');
+  assert.equal(r.cells[4].tier, 3, 'cell 05 stays Legendary');
+});
+
+// Regression guard: the tip's name wrapped onto a second line 0.9 letter
+// heights under the first, past the 0.6 the reader allowed, so only
+// "Ferocious Beast's" was read, which isn't an instrument, and the iPad
+// mode gave up on the run's instruments (the user's run, 2026-10-30).
+test('a two-line name set further apart is still read whole', { skip: missing(TWO_LINE_GAP) }, () => {
+  const tip = S.findToolTip(frame(TWO_LINE_GAP));
+  assert.ok(tip, 'a tip');
+  assert.ok(tip.title[3] >= 169, `title ${tip.title} holds the second line of the name`);
+  assert.ok(tip.title[3] < 190, `title ${tip.title} stops above "Condition"`);
 });

@@ -467,7 +467,12 @@
       for (let px = x - 29 * k; px <= x - 17 * k; px += stepPx) visit(px, py);
       for (let px = x + 17 * k; px <= x + 29 * k; px += stepPx) visit(px, py);
     }
-    if (!noFoot) for (let py = y - 14 * k; py <= y - 4 * k; py += stepPx) for (let px = x - 9 * k; px <= x + 9 * k; px += stepPx) visit(px, py);
+    // A tusk marker lies on the foot of a Normal's frame, and its orange (20%
+    // of the foot, none on the sides) read it as Legendary (the user's run,
+    // 2026-10-29): a frame's color shows on its sides, so without any there
+    // the foot is left out.
+    const sides = bins.reduce((a, b) => a + b, 0);
+    if (!noFoot && sides > 0) for (let py = y - 14 * k; py <= y - 4 * k; py += stepPx) for (let px = x - 9 * k; px <= x + 9 * k; px += stepPx) visit(px, py);
     const colored = bins.reduce((a, b) => a + b, 0);
     // A warm picture (a stream's capture, report 344) washes a Magic
     // frame's blue out: 2% of the frame passed as colored, against 12%
@@ -1762,10 +1767,12 @@
       if (!first) continue;
       // A long name wraps onto a second line, set close under the first
       // ("Ferocious Beast's Ravenous Chains", the user's run, 2026-10-25);
-      // "Condition" sits further down, under the divider.
+      // "Condition" sits further down, under the divider (2.3 letter heights
+      // under the name). The second line can sit 0.9 letter heights under
+      // the first (the same name, the user's run, 2026-10-30).
       const name = [first];
       for (const l of lines.slice(1)) {
-        if (l.y0 - Math.max(...name.map((n) => n.y1)) > 0.6 * first.h || name.length >= 3) break;
+        if (l.y0 - Math.max(...name.map((n) => n.y1)) > 1.2 * first.h || name.length >= 3) break;
         name.push(l);
       }
       const tx0 = Math.min(...name.flatMap((l) => l.pieces.map((p) => p.x0))), tx1 = Math.max(...name.flatMap((l) => l.pieces.map((p) => p.x1)));

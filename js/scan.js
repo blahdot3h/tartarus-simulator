@@ -444,7 +444,9 @@
   const TIER_BY_HUE = [
     [0, 14, 4], [14, 62, 3], [175, 242, 1], [242, 305, 2], [330, 360, 4],
   ];
-  function frameRarity(img, x, y, k) {
+  // noFoot: leave out the frame's foot, under the portrait, where a
+  // scratched door's red slashes lie.
+  function frameRarity(img, x, y, k, noFoot) {
     const bins = [0, 0, 0, 0, 0];
     let samples = 0;
     let bright = 0;
@@ -465,7 +467,12 @@
       for (let px = x - 29 * k; px <= x - 17 * k; px += stepPx) visit(px, py);
       for (let px = x + 17 * k; px <= x + 29 * k; px += stepPx) visit(px, py);
     }
-    for (let py = y - 14 * k; py <= y - 4 * k; py += stepPx) for (let px = x - 9 * k; px <= x + 9 * k; px += stepPx) visit(px, py);
+    // A tusk marker lies on the foot of a Normal's frame, and its orange (20%
+    // of the foot, none on the sides) read it as Legendary (the user's run,
+    // 2026-10-29): a frame's color shows on its sides, so without any there
+    // the foot is left out.
+    const sides = bins.reduce((a, b) => a + b, 0);
+    if (!noFoot && sides > 0) for (let py = y - 14 * k; py <= y - 4 * k; py += stepPx) for (let px = x - 9 * k; px <= x + 9 * k; px += stepPx) visit(px, py);
     const colored = bins.reduce((a, b) => a + b, 0);
     // A warm picture (a stream's capture, report 344) washes a Magic
     // frame's blue out: 2% of the frame passed as colored, against 12%
@@ -477,8 +484,11 @@
       return { tier: faint[2] > faint[1] ? 2 : 1, conf: 0.6, colored: colored / samples, bins, samples, faint: (faint[1] + faint[2]) / samples };
     }
     // A Normal's frame has no colored pixels at all, at every scale tested;
-    // the dimmest colored frame had 3%. A few stray ones leave it in doubt.
-    if (colored < 0.025 * samples) return { tier: 0, conf: colored < 0.008 * samples ? 0.85 : bright > 0.04 * samples ? 0.8 : 0.55, colored: colored / samples };
+    // the dimmest colored frame had 3%. A few stray ones leave it in doubt,
+    // unless all of them are orange: the riot's glow over the screen's edges
+    // on a run's last day put about 1% of orange on Normal frames (the
+    // user's iPad, 2026-10-26), and their doubt hid the advice.
+    if (colored < 0.025 * samples) return { tier: 0, conf: colored < 0.008 * samples ? 0.85 : bright > 0.04 * samples || bins[3] === colored ? 0.8 : 0.55, colored: colored / samples };
     let tier = 0;
     for (let t = 1; t < bins.length; t++) if (bins[t] > bins[tier]) tier = t;
     return { tier, conf: Math.min(1, 0.5 + bins[tier] / colored / 2), colored: colored / samples, bins, samples };
@@ -532,7 +542,10 @@
     if (colorShare(img, ...inside, (h, s, v) => v > 0.82 && s < 0.25) > 0.002 && colorShare(img, x + (-10 + third) * k, y - 54 * k, x + (-10 + 2 * third) * k, y - (54 - 26 / 3) * k, isGray) < 0.3) return null;
     // The slashes: 0.10-0.11 red there, 0.03 at most on other doors.
     const scratch = colorShare(img, x - 20 * k, y - 30 * k, x + 10 * k, y - 5 * k, (h, s, v) => (h < 16 || h > 340) && s > 0.4 && v > 0.45) > 0.05;
-    const frame = frameRarity(img, x, y, k);
+    // The slashes reach the frame's foot: on a small picture their red
+    // left a Normal's white frame in doubt (an AirPlay frame of 1400 px,
+    // 2026-10-24), so a scratched door's frame is read without its foot.
+    const frame = frameRarity(img, x, y, k, scratch);
     let tier = frame.tier;
     // The slashes are red, as a Supreme's frame is: under them, the frame's
     // other color (they alone make 1-2% of it red).
@@ -612,6 +625,14 @@
     if (lock > 0.4) {
       Object.assign(cell, { kind: 'locked', conf: lock });
       if (!cell.nest) cell.shown = shownDoor(img, x, y, k);
+      // A door sealed again on an emptied cell (its inmate devoured, or
+      // removed by Kin's Coin): the cell's lit floor shows behind the
+      // padlock, where a plain locked door is dark all over (1.0 on 8 doors)
+      // and a "?" portrait mostly dark (0.73-0.76). The user's run,
+      // 2026-10-24: cell 07's scratched Normal was gone the next morning,
+      // its floor at 0.52, and the scratch kept from the day before left
+      // two Normal Wolves with a meal the game didn't show.
+      if (!cell.nest && !cell.shown) cell.emptied = colorShare(img, x - 10 * k, y - 54 * k, x + 13 * k, y - 28 * k, (h, s2, v) => v < 0.25) < 0.6;
       return cell;
     }
     const face = faceMatch(gray, img.width, img.height, x, y, k, ref.faces);
@@ -693,15 +714,18 @@
   }
 
   // An event's "!" sits just outside its cell: orange, tall and thin. The
-  // warden's gold arrow (warden.box) has points that look the same.
+  // warden's gold arrow (warden.box) has points that look the same. On the
+  // Sewer Ratway pick screen the right corner bracket's white glow washes out
+  // the lower half of the "!" (to saturation 0.45-0.6), so it's taken a little
+  // paler than isOrange.
   function findEvents(img, loc, cells, warden) {
     const arrow = warden && warden.box;
     const corners = [[-0.7, -1.1], [5.7, -1.1], [5.7, 3.5], [-0.7, 3.5]].map(([u, v]) => at(loc, u, v));
     const xs = corners.map((c) => c[0]);
     const ys = corners.map((c) => c[1]);
     const found = blobs(img, Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys), (px, py) => {
-      const [r, g, b] = rgbAt(img, px, py);
-      return isOrange(...hsv(r, g, b));
+      const [h, s, v] = hsv(...rgbAt(img, px, py));
+      return h >= 18 && h <= 46 && s > 0.45 && v > 0.55;
     });
     const out = new Set();
     for (const b of found) {
@@ -1549,19 +1573,31 @@
   // letter height): word breaks in this font are uneven, and colored labels
   // can come apart into extra pieces.
   function findLabel(img, box, letters, shape, slack = 2.5) {
+    return findLabels(img, box, letters, shape, slack)[0] || null;
+  }
+  // Every line that could be the label, the best fit first. Lines of other
+  // text can fit too (the objective "Undercurrents" wraps onto three lines,
+  // and its third, "times Completed", fit the "Torture Instrument" label
+  // better than the label itself on an AirPlay frame, 2026-10-24), so a
+  // caller that knows what sits under the label can try the next ones.
+  function findLabels(img, box, letters, shape, slack = 2.5) {
     const lines = [];
     for (const r of textRadii(img)) lines.push(...textLines(img, box[0], box[1], box[2], box[3], { minH: 6, maxH: Math.max(40, img.height * 0.06), r, s: 0.5 }));
-    let best = null;
+    const found = [];
     for (const line of lines) {
       for (const p of line.pieces) {
         const n = p.words.reduce((a, w) => a + w.glyphs.length, 0);
         const ratio = (p.x1 - p.x0) / Math.max(1, line.h);
         if (Math.abs(n - letters) > 6 || Math.abs(ratio - shape) > slack) continue;
         const off = Math.abs(n - letters) / 3 + Math.abs(ratio - shape);
-        if (!best || off < best.off) best = { off, x0: p.x0, x1: p.x1, y0: p.y0, y1: p.y1, h: line.h, words: p.words.map((w) => w.glyphs.length) };
+        found.push({ off, x0: p.x0, x1: p.x1, y0: p.y0, y1: p.y1, h: line.h, words: p.words.map((w) => w.glyphs.length) });
       }
     }
-    return best;
+    found.sort((a, b) => a.off - b.off);
+    // The same line read at several radii: one candidate a line.
+    const out = [];
+    for (const c of found) if (!out.some((o) => Math.abs(o.y0 - c.y0) < o.h && Math.abs(o.x0 - c.x0) < o.h * 2)) out.push(c);
+    return out;
   }
 
   // Torture instruments: the icons under the "Torture Instrument" label,
@@ -1594,8 +1630,19 @@
   function findToolIcons(img, loc) {
     const left = Math.min(at(loc, 0, 0)[0], at(loc, 0, 3)[0]) - 70 * loc.s;
     if (left < 30) return { icons: [], found: false };
-    const label = findLabel(img, [0, 0, left, img.height - 1], 17, 12.2);
-    if (!label) return { icons: [], found: false };
+    const labels = findLabels(img, [0, 0, left, img.height - 1], 17, 12.2);
+    if (!labels.length) return { icons: [], found: false };
+    // Among the lines that fit the label, the first with instrument cards
+    // under it; with none, the best fit (a run with no instrument held).
+    let first = null;
+    for (const label of labels.slice(0, 4)) {
+      const found = iconsUnder(img, label, left);
+      if (found.icons.length) return found;
+      if (!first) first = found;
+    }
+    return first;
+  }
+  function iconsUnder(img, label, left) {
     // The label is 12.2 letter heights wide; its width is steadier than its
     // height when letters come apart.
     const h = (label.x1 - label.x0) / 12.2;
@@ -1664,34 +1711,117 @@
     return { icons: out, found: true, label };
   }
 
+  // An instrument's tip: tapped on the iPad (or pointed at), its card opens
+  // right of its icon as a flat grey box, its name on the first line over a
+  // thin divider, then Condition and Effect. The grey is neutral where the
+  // prison is brown, so the box stands out whatever is behind it, the board
+  // included. It sits in the left half of the screen, the panel's side.
+  // Returns its box and the first line's box with room around it (for a text
+  // reader), in pixels, or null without one.
+  function findToolTip(img) {
+    const W = img.width, H = img.height;
+    // The box opens in the left half (the panel's side) and can run on past
+    // it: a wide tip of the last instrument.
+    const right = Math.floor(W * 0.55), far = Math.floor(W * 0.9);
+    const step = 2;
+    const minW = W * 0.1, minH = H * 0.1;
+    const grey = (x, y) => {
+      const [r, g, b] = rgbAt(img, x, y);
+      return r >= 18 && r <= 80 && Math.abs(r - g) <= 4 && Math.abs(g - b) <= 5 && Math.abs(r - b) <= 6;
+    };
+    // The box's margins hold no text, so their columns are grey from its
+    // top to its bottom: the longest such run in each column.
+    const runs = [];
+    for (let x = 0; x < right; x += step) {
+      let from = -1, best = null;
+      for (let y = 0; y <= H; y += step) {
+        if (y < H && grey(x, y)) { if (from < 0) from = y; } else if (from >= 0) { if (!best || y - from > best[1] - best[0]) best = [from, y - step]; from = -1; }
+      }
+      runs[x] = best && best[1] - best[0] >= minH ? best : null;
+    }
+    // From the left, each column that starts such a run is a left edge to
+    // try: the box reaches right while its columns are mostly grey over
+    // those rows (text covers under half of a row), and is a tenth of the
+    // screen wide at least. The grey stone of the courtyard is brown enough
+    // to fail the grey, and the first gap ends a box anyway.
+    for (let x = 0; x < right; x += step) {
+      if (!runs[x] || (x >= step && runs[x - step])) continue;
+      // The edge's own column is shaded a little: the box's rows come from
+      // the margin's first few columns together.
+      let [y0, y1] = runs[x];
+      for (let k = 1; k <= 3; k++) { const r = runs[x + k * step]; if (r) { y0 = Math.min(y0, r[0]); y1 = Math.max(y1, r[1]); } }
+      const n = Math.floor((y1 - y0) / step) + 1;
+      let x1 = x;
+      for (let xx = x; xx < far; xx += step) {
+        let c = 0;
+        for (let y = y0; y <= y1; y += step) if (grey(xx, y)) c++;
+        if (c >= 0.6 * n) x1 = xx; else if (xx - x1 > W * 0.01) break;
+      }
+      if (x1 - x < minW) continue;
+      const box = [x, y0, x1 + step - 1, y1 + step - 1];
+      // The name: the first line of text in the box, from its top.
+      const lines = textLines(img, Math.max(0, x - minW * 0.05), y0, x1 - 2, y0 + (y1 - y0) * 0.3, { minH: 8, maxH: Math.max(40, H * 0.03) })
+        .filter((l) => l.pieces.reduce((a, p) => a + p.glyphs.length, 0) >= 4)
+        .sort((a, b) => a.y0 - b.y0);
+      const first = lines[0];
+      if (!first) continue;
+      // A long name wraps onto a second line, set close under the first
+      // ("Ferocious Beast's Ravenous Chains", the user's run, 2026-10-25);
+      // "Condition" sits further down, under the divider (2.3 letter heights
+      // under the name). The second line can sit 0.9 letter heights under
+      // the first (the same name, the user's run, 2026-10-30).
+      const name = [first];
+      for (const l of lines.slice(1)) {
+        if (l.y0 - Math.max(...name.map((n) => n.y1)) > 1.2 * first.h || name.length >= 3) break;
+        name.push(l);
+      }
+      const tx0 = Math.min(...name.flatMap((l) => l.pieces.map((p) => p.x0))), tx1 = Math.max(...name.flatMap((l) => l.pieces.map((p) => p.x1)));
+      const room = Math.round(first.h * 0.35);
+      const title = [Math.max(x, tx0 - room), Math.max(y0, first.y0 - room), Math.min(box[2], tx1 + room), Math.min(box[3], Math.max(...name.map((l) => l.y1)) + room)];
+      return { box, title, h: first.h };
+    }
+    return null;
+  }
+
   // The run's start card hangs as a round badge under the instrument panel
   // (Opulence: a scroll and coins). It sits at the same place in the
   // label's letter heights whatever the instruments (the user's Opulence
   // run, every board).
+  // On the iPad's taller screen it hangs lower, at the same size (the
+  // user's Cage Fight run, 2026-10-25): 43.3 letter heights under the label.
   // inner: the picture inside the ring (the ring is the same on every
   // card), else the whole badge.
-  function badgeBox(label, inner) {
+  const BADGE_PLACES = [{ x: 2.87, y: 32.1 }, { x: 2.7, y: 43.3 }];
+  function badgeBox(label, inner, place = BADGE_PLACES[0]) {
     const h = (label.x1 - label.x0) / 12.2;
-    const cx = label.x0 + 2.87 * h;
-    const cy = label.y1 + 32.1 * h;
+    const cx = label.x0 + place.x * h;
+    const cy = label.y1 + place.y * h;
     const rx = (inner ? 2.6 : 3.9) * h;
     const ry = (inner ? 2.0 : 3.9) * h;
     return [cx - rx, cy - ry, cx + rx, cy + ry].map(Math.round);
   }
 
+  // Where the badge hangs on this screen, if there's one: without a badge
+  // the wall there is dark, 0 bright pixels on every board without one,
+  // 6-9% with one (17% on the iPad).
+  function badgePlace(img, label) {
+    if (!label) return null;
+    return BADGE_PLACES.find((place) => {
+      const box = badgeBox(label, false, place);
+      return box[0] >= 0 && box[3] < img.height && colorShare(img, ...box, (h, s, v) => v > 0.3) >= 0.02;
+    }) || null;
+  }
+
   // The badge there, if any: its id when it's one the reader knows.
   function readBadge(img, label, ref) {
-    if (!label) return null;
-    const box = badgeBox(label);
-    if (box[0] < 0 || box[3] >= img.height) return null;
-    // Without a badge the wall there is dark: 0 bright pixels on every board
-    // without one, 6-9% with one.
-    if (colorShare(img, ...box, (h, s, v) => v > 0.3) < 0.02) return null;
+    const place = badgePlace(img, label);
+    if (!place) return null;
+    const box = badgeBox(label, false, place);
     // On the picture inside the ring, a card scores 0.986-1 against its own
     // sample and at most 0.918 against another's (Opulence and Tyranny, the
     // user's runs; on the whole badge 0.979-0.99, report 174): a card
     // without a sample stays unknown.
-    const feat = artFeature(img, ...badgeBox(label, true));
+    const feat = artFeature(img, ...badgeBox(label, true, place));
     // Each card's best sample.
     const by = new Map();
     for (const b of ref.badges || []) {
@@ -1770,7 +1900,9 @@
   // "Return to Selection" button at the top right, words of 6, 2 and 9
   // letters (and the eye icon after them), where the board otherwise shows
   // "Chromatic Prisoner", 9 and 8 (report 325: a pasted status view taken
-  // for a plain board).
+  // for a plain board). "Chromatic Prisoner" can show through just under it,
+  // and "Return" then reads as two words, 5 and 2 letters (the user's run,
+  // 2026-10-25): words before "to" are taken together.
   function readStatusView(img, loc) {
     const right = Math.max(at(loc, 5, 0)[0], at(loc, 5, 3)[0]) + 60 * loc.s;
     if (right > img.width - 30) return false;
@@ -1778,7 +1910,11 @@
       for (const line of textLines(img, right, 0, img.width - 1, Math.round(img.height / 2), { minH: 6, maxH: Math.max(40, img.height * 0.06), r, s: 0.5 })) {
         for (const p of line.pieces) {
           const w = p.words.map((q) => q.glyphs.length);
-          if (w.length >= 3 && Math.abs(w[0] - 6) + Math.abs(w[1] - 2) + Math.abs(w[2] - 9) <= 2) return true;
+          let before = 0;
+          for (let i = 0; i + 2 < w.length && i < 3; i++) {
+            before += w[i];
+            if (Math.abs(before - 6) + Math.abs(w[i + 1] - 2) + Math.abs(w[i + 2] - 9) <= 2) return true;
+          }
         }
       }
     }
@@ -2287,7 +2423,7 @@
     return { ok: true, loc, cells, warden, doors, days, tools, badge, chromatic, objective, chain, decision, statusView, notes, ms: Date.now() - t0 };
   }
 
-  const api = { scan, scanPick, pickArtBox, pickRerollShown, locateBoard, readCell, findWarden, findToolIcons, readDoors, readDays, doorCards, dayNumber, prefixVector, textLines, glyphVector, faceVector, artFeature, similarity, hsv, blobs, at, gridOf, scaleAt, grayOf, blur, RING, H0, ARROW, FACE, GLYPH, locateByLabels, readChainScreen, readDecision, readObjectiveTitle, withPanelIcons, badgeBox, readBadge, missingDoor, colourMix, cellLight };
+  const api = { scan, scanPick, pickArtBox, pickRerollShown, locateBoard, readCell, findWarden, findToolIcons, findToolTip, readDoors, readDays, doorCards, dayNumber, prefixVector, textLines, glyphVector, faceVector, artFeature, similarity, hsv, blobs, at, gridOf, scaleAt, grayOf, blur, RING, H0, ARROW, FACE, GLYPH, locateByLabels, readChainScreen, readDecision, readObjectiveTitle, withPanelIcons, badgeBox, badgePlace, readBadge, missingDoor, colourMix, cellLight };
   if (typeof module === 'object' && module.exports) module.exports = api;
   root.TartarusScan = api;
 })(typeof window !== 'undefined' ? window : typeof self !== 'undefined' ? self : globalThis);

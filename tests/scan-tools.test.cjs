@@ -24,6 +24,9 @@ const CAGE_FIGHT = 'airplay-1400-badge-cagefight.png';
 // The iPad's screenshot of a run's last day (0 days until Riot), turned to
 // sRGB as the browser shows it: an orange glow lies over the screen's edges.
 const RIOT_GLOW = 'ipad-day0-riot-glow.png';
+// A Normal Mammoth with jaws and a tusk marker under its portrait (cell 11),
+// next to a Magic one with the same marks (cell 13).
+const TUSK_NORMAL = 'airplay-1400-tusk-normal.png';
 
 // Regression guard: the objective "Undercurrents" wraps onto three lines,
 // and its third ("times Completed") passed for the "Torture Instrument"
@@ -141,4 +144,18 @@ test('the riot\'s glow on the last day leaves a Normal "?" door sure', { skip: m
     assert.ok(r.cells[n].shown.conf >= 0.6, `cell ${n + 1} in doubt at ${r.cells[n].shown.conf}`);
   }
   assert.equal(r.cells[11].shown.tier, 1, 'cell 12 stays Magic');
+});
+
+// Regression guard: the tusk marker under a Normal's portrait lies on the
+// frame's foot, and its orange (36 of 180 samples there, none on the sides)
+// read the inmate as Legendary; the jaws over it then didn't fit, the cell
+// was marked Check and the iPad mode hid its advice (the user's run,
+// 2026-10-29).
+test('a tusk marker under a Normal\'s portrait leaves it Normal', { skip: missing(TUSK_NORMAL) }, () => {
+  const r = S.scan(frame(TUSK_NORMAL), REF);
+  assert.ok(r.ok);
+  assert.equal(r.cells[10].beast, 'mammoth');
+  assert.equal(r.cells[10].tier, 0, 'cell 11 is Normal');
+  assert.equal(r.cells[12].tier, 1, 'cell 13 stays Magic');
+  assert.equal(r.cells[4].tier, 3, 'cell 05 stays Legendary');
 });

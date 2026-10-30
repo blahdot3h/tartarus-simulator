@@ -467,7 +467,12 @@
       for (let px = x - 29 * k; px <= x - 17 * k; px += stepPx) visit(px, py);
       for (let px = x + 17 * k; px <= x + 29 * k; px += stepPx) visit(px, py);
     }
-    if (!noFoot) for (let py = y - 14 * k; py <= y - 4 * k; py += stepPx) for (let px = x - 9 * k; px <= x + 9 * k; px += stepPx) visit(px, py);
+    // A tusk marker lies on the foot of a Normal's frame, and its orange (20%
+    // of the foot, none on the sides) read it as Legendary (the user's run,
+    // 2026-10-29): a frame's color shows on its sides, so without any there
+    // the foot is left out.
+    const sides = bins.reduce((a, b) => a + b, 0);
+    if (!noFoot && sides > 0) for (let py = y - 14 * k; py <= y - 4 * k; py += stepPx) for (let px = x - 9 * k; px <= x + 9 * k; px += stepPx) visit(px, py);
     const colored = bins.reduce((a, b) => a + b, 0);
     // A warm picture (a stream's capture, report 344) washes a Magic
     // frame's blue out: 2% of the frame passed as colored, against 12%

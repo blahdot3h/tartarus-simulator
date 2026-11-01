@@ -130,6 +130,9 @@
 
   const blocked = (st) => !st || st.phase === 'ended' || st.pending.length > 0 || st.phase === 'event' || st.phase === 'office' || !!st.chaining;
 
+  // An error stays long enough to be read and caught (the user, 2026-10-24);
+  // an info note goes sooner.
+  const TOAST_ERROR_MS = 6000, TOAST_INFO_MS = 3400;
   function toast(text, info) {
     const el = $('toast');
     el.textContent = text;
@@ -148,7 +151,7 @@
     ui.toastTimer = setTimeout(() => {
       if (typeof el.hidePopover === 'function' && el.matches(':popover-open')) el.hidePopover();
       else el.hidden = true;
-    }, 3400);
+    }, info ? TOAST_INFO_MS : TOAST_ERROR_MS);
   }
 
   function persist() {

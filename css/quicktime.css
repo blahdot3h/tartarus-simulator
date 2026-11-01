@@ -1,0 +1,34 @@
+/* iPad live screen (js/quicktime.js): a tab on the screenshot panel. */
+.qt-tabs { display: flex; gap: 4px; margin: -4px 0 14px; border-bottom: 1px solid var(--iron); }
+.qt-tabs [role="tab"] { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 6px 14px; margin-bottom: -1px; border: 1px solid transparent; border-radius: var(--radius) var(--radius) 0 0; background: transparent; color: var(--ash); font-weight: 600; cursor: pointer; }
+.qt-tabs [role="tab"]:hover { color: var(--chalk); }
+.qt-tabs [role="tab"][aria-selected="true"] { border-color: var(--iron); border-bottom-color: var(--slab); background: var(--slab); color: var(--bone); }
+.qt-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--iron-hi); }
+.qt-capturing .qt-dot { background: var(--moss); box-shadow: 0 0 0 3px color-mix(in srgb, var(--moss) 25%, transparent); }
+
+#qt-pane-ipad:not([hidden]) { display: grid; grid-template-columns: minmax(260px, 420px) 1fr; gap: 18px 24px; align-items: start; }
+.qt-preview { position: relative; aspect-ratio: 4 / 3; overflow: hidden; border: 1px solid var(--iron); border-radius: var(--radius); background: var(--p-dark); }
+.qt-video { display: block; width: 100%; height: 100%; object-fit: contain; }
+.qt-empty { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; padding: 16px; color: var(--ash); text-align: center; font-size: 14px; }
+.qt-live, .qt-frame { position: absolute; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; background: rgb(0 0 0 / 0.65); }
+.qt-live { top: 8px; left: 8px; color: var(--moss); letter-spacing: 0.06em; text-transform: uppercase; }
+.qt-frame { right: 8px; bottom: 8px; color: var(--chalk); }
+.qt-live[hidden], .qt-frame[hidden], .qt-empty[hidden] { display: none; }
+.qt-side .az-h2 { margin-bottom: 6px; }
+.qt-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 6px; }
+.qt-voice { position: relative; }
+.qt-voice input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+.qt-voice::after { content: 'off'; color: var(--ash); font-weight: 600; }
+.qt-voice-icon { width: 10px; height: 10px; border-radius: 50%; background: var(--iron-hi); }
+.qt-voice:has(input:checked) { border-color: var(--moss); background: color-mix(in srgb, var(--moss) 16%, var(--slab-hi)); }
+.qt-voice:has(input:checked)::after { content: 'on'; color: var(--moss); }
+.qt-voice:has(input:checked) .qt-voice-icon { background: var(--moss); box-shadow: 0 0 0 3px color-mix(in srgb, var(--moss) 25%, transparent); }
+.qt-voice:has(input:focus-visible) { outline: 2px solid var(--bone); outline-offset: 2px; }
+.qt-buttons select.qt-voice-pick { width: auto; max-width: 220px; }
+.qt-advice { margin: 10px 0; padding: 10px 12px; border-left: 3px solid var(--bone); background: color-mix(in srgb, var(--bone) 7%, transparent); color: var(--bone-hi); font-size: 19px; font-weight: 700; }
+.qt-advice:empty { display: none; }
+.qt-check, .qt-help { display: block; margin-top: 8px; color: var(--ash); font-size: 13px; }
+.qt-help p { margin: 6px 0 0; }
+@media (max-width: 760px) { #qt-pane-ipad:not([hidden]) { grid-template-columns: 1fr; } }
+
+.qt-capturing.qt-stale #az-results { display: none !important; }

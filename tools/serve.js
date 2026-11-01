@@ -8,6 +8,12 @@
  *   node tools/serve.js [--port 8080] [--live]
  *   then open http://localhost:8080/  (or /analyze.html?auto=1)
  *
+ * The iPad mode keeps a record of a session here when opened with ?record=1
+ * (analyze.html?record=1): each picture it read, what it made of it and its
+ * advice, in sandbox/records/<start>/
+ * (record.jsonl and pictures/). Don't use --live then: a reload ends the
+ * capture.
+ *
  * In VS Code, Run and Debug > "Local site" (F5) starts it with --live, and
  * restarts it when this file changes. */
 'use strict';
@@ -33,6 +39,55 @@ const TYPES = {
 // Worker's code is public (follow.html shows it); its secrets never are.
 const PRIVATE = ['.git', '.vscode', 'node_modules', 'trainingdata', 'local', '.wrangler'];
 const SECRET = /(^|[\\/])(\.dev\.vars|\.wrangler|\.env[^\\/]*)([\\/]|$)/;
+const RECORDS = path.join(ROOT, 'sandbox', 'records');
+const RUN_NAME = /^\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d-\d{3}$/;
+const PNG = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/;
+const RECORD_LIMIT = 16 * 1024 * 1024;
+
+// Only pages of this local site may write: any other site open in the browser
+// could post to localhost too.
+function allowedOrigin(origin, port) {
+  return origin === `http://localhost:${port}` || origin === `http://127.0.0.1:${port}`;
+}
+// One line of a run's record, its picture (a PNG data URL) in a file of its own.
+function writeRecord(dir, entry) {
+  if (!entry || !RUN_NAME.test(String(entry.run))) throw new Error('Bad run name');
+  const run = path.join(dir, entry.run);
+  const line = Object.assign({}, entry);
+  if (entry.png != null) {
+    if (!Number.isInteger(entry.seq) || entry.seq < 0) throw new Error('Bad seq for a picture');
+    const m = PNG.exec(String(entry.png));
+    if (!m) throw new Error('Not a PNG picture');
+    delete line.png;
+    line.picture = `pictures/${String(entry.seq).padStart(4, '0')}.png`;
+    fs.mkdirSync(path.join(run, 'pictures'), { recursive: true });
+    fs.writeFileSync(path.join(run, line.picture), Buffer.from(m[1], 'base64'));
+  }
+  fs.mkdirSync(run, { recursive: true });
+  fs.appendFileSync(path.join(run, 'record.jsonl'), `${JSON.stringify(line)}\n`);
+}
+function record(req, res) {
+  if (!allowedOrigin(req.headers.origin, PORT) || !/^application\/json\b/.test(req.headers['content-type'] || '')) {
+    res.writeHead(403, { 'Content-Type': 'text/plain' }).end('Forbidden');
+    return;
+  }
+  const chunks = [];
+  let size = 0;
+  req.on('data', (c) => {
+    size += c.length;
+    if (size <= RECORD_LIMIT) chunks.push(c);
+  });
+  req.on('end', () => {
+    if (size > RECORD_LIMIT) { res.writeHead(413, { 'Content-Type': 'text/plain' }).end('Too large'); return; }
+    try {
+      writeRecord(RECORDS, JSON.parse(Buffer.concat(chunks).toString('utf8')));
+      res.writeHead(204).end();
+    } catch (e) {
+      console.error(`record: ${e.message}`);
+      res.writeHead(400, { 'Content-Type': 'text/plain' }).end(e.message);
+    }
+  });
+}
 
 // --live: pages listen here, and reload when a served file changes.
 const listeners = new Set();
@@ -44,6 +99,10 @@ function serve(req, res) {
     rel = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
   } catch (e) {
     res.writeHead(400).end('Bad request');
+    return;
+  }
+  if (rel === '/__record' && req.method === 'POST') {
+    record(req, res);
     return;
   }
   if (LIVE && rel === '/__live') {
@@ -76,12 +135,15 @@ function serve(req, res) {
   });
 }
 
+module.exports = { writeRecord, allowedOrigin, serve };
+if (require.main !== module) return;
+
 if (LIVE) {
   let timer = 0;
   fs.watch(ROOT, { recursive: true }, (event, name) => {
     if (!name) return;
     const top = name.split(/[\\/]/)[0];
-    if (PRIVATE.includes(top) || /\.(swp|tmp)$|~$/.test(name)) return;
+    if (PRIVATE.includes(top) || /\.(swp|tmp)$|~$/.test(name) || /^sandbox[\\/]records([\\/]|$)/.test(name)) return;
     clearTimeout(timer);
     timer = setTimeout(() => {
       for (const res of listeners) res.write('data: reload\n\n');

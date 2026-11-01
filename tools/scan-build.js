@@ -68,6 +68,11 @@ const TOOLS = {
   claws: { name: 'Filthy Claws: Alpha Wolf', sim: 'claws', card: null },
   // Report 100. No panel icon yet.
   trap: { name: 'Blood-Stained Trap: Berserk Lion', sim: 'trap', card: null },
+  // Panel icons in tools/pick-truth.json (the user's iPad run, 2026-10-31):
+  // without them the Chains read as the Barbed Collar or the Trap, and the
+  // Crown as the Skewered Rat Heads.
+  ravenous: { name: "Ferocious Beast's Ravenous Chains", sim: 'ravenous', card: null },
+  crown: { name: 'Iron Crown of the Prison King: Berserk Lion', sim: 'crown', card: null },
 };
 
 const cache = new Map();

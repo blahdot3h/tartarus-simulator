@@ -18,6 +18,10 @@ self.onmessage = (e) => {
       self.postMessage({ id, kind, result: self.TartarusScan.readObjectiveTitle(img) });
       return;
     }
+    if (kind === 'tip') {
+      self.postMessage({ id, kind, result: self.TartarusScan.findToolTip(img) });
+      return;
+    }
     if (kind === 'pick') {
       self.postMessage({ id, kind, result: self.TartarusScan.scanPick(img, self.TARTARUS_SCAN, self.TARTARUS_PICK) });
       return;

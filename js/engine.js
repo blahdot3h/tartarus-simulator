@@ -1213,6 +1213,47 @@
   const toolText = (id) => (TOOLS[id] ? TOOLS[id].text : GIFTS[id] ? GIFTS[id].text : '');
   const toolName = (id) => (TOOLS[id] ? TOOLS[id].name : GIFTS[id] ? GIFTS[id].name : id);
 
+  // A cut-short name is matched on at least this many of its letters.
+  const SHOWN_LETTERS = 12;
+
+  // How far the name n is from the text t, per letter of n: n against the
+  // part of t it fits best, so the card frame's stray marks around it cost
+  // nothing. cut: t stops at an ellipsis, so n may go on past it.
+  function nameDistance(t, n, cut) {
+    let prev = new Array(t.length + 1).fill(0);
+    let best = Infinity;
+    for (let i = 1; i <= n.length; i++) {
+      const row = [i];
+      for (let j = 1; j <= t.length; j++) row[j] = Math.min(prev[j] + 1, row[j - 1] + 1, prev[j - 1] + (n[i - 1] === t[j - 1] ? 0 : 1));
+      if (cut && i >= SHOWN_LETTERS) best = Math.min(best, row[t.length] / i);
+      prev = row;
+    }
+    return Math.min(best, Math.min(...prev) / n.length);
+  }
+
+  // The instrument an offer card's printed name names, from the text
+  // reader's output: the known name it's closest to, when that's clearly
+  // closer than any other ({ id, score }); else null. A long name is printed
+  // cut short ("Iron Crown of the Prison King: Berser...").
+  function toolFromText(text) {
+    const letters = (t) => t.toLowerCase().replace(/[^a-z]/g, '');
+    // The whole text, each line, and each two lines together: a long name
+    // ("Iron Tongs of Lust: Mammoth") can wrap onto a second line.
+    const lines = text.split('\n');
+    const pairs = lines.slice(1).map((l, i) => `${lines[i]} ${l}`);
+    const tries = [text, ...lines, ...pairs].map((t) => {
+      const dots = t.search(/\.\.\.|…/);
+      return { t: letters(dots < 0 ? t : t.slice(0, dots)), cut: dots >= 0 };
+    }).filter((t) => t.t.length >= 3);
+    const scores = TOOL_IDS.map((id) => {
+      // The full name, and the part before a colon ("Iron Tongs of Lust").
+      const forms = [...new Set([toolName(id), toolName(id).split(':')[0]].map(letters))];
+      return { id, score: Math.min(...forms.flatMap((n) => tries.map((t) => nameDistance(t.t, n, t.cut))), 9) };
+    }).sort((a, b) => a.score - b.score);
+    const [best, next] = scores;
+    return best && best.score <= 0.3 && (!next || next.score - best.score >= 0.15) ? best : null;
+  }
+
   // ---------- Actions ----------
 
   function patrol(state, n) {
@@ -2303,7 +2344,7 @@
     removeTool: bounded(removeTool),
     patrolOptions, clockwisePath, devourOptions, startOptions, chainOptions, canStopChain, cageFight, gainFor, executionVictims, canEat, eatsOf, canDevourNow, canSwapNow, canHuntNow, huntTargets, canReroll,
     linkOf, cellOf, boardInmates, rosterOf, advise, limits,
-    toolText, toolName, eventName, describe, tierName, beastName, cellLabel, plural, stepsBetween, scarceBeasts, lowestInmates,
+    toolText, toolName, toolFromText, eventName, describe, tierName, beastName, cellLabel, plural, stepsBetween, scarceBeasts, lowestInmates,
   };
 
   if (typeof module === 'object' && module.exports) module.exports = api;
